@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0b0d10">
+<link rel="manifest" href="/manifest.webmanifest">
+<title>herdeck</title>
+<style>
+  :root{
+    --bg:#0b0d10; --panel:#14171c; --panel2:#1b1f26; --line:#262b33; --text:#e6e8eb; --muted:#8b93a1;
+    --blocked:#ff6b5b; --done:#3fd08b; --working:#5aa9ff; --idle:#5c6370; --unknown:#b48ead; --warn:#e0af68;
+    --mono:"SF Mono",ui-monospace,Menlo,monospace;
+    --r:16px; --gap:12px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;background:var(--bg);color:var(--text);font:15px/1.35 -apple-system,BlinkMacSystemFont,"SF Pro Text","Inter",system-ui,sans-serif;}
+  body{padding:max(14px,env(safe-area-inset-top)) max(14px,env(safe-area-inset-right)) max(14px,env(safe-area-inset-bottom)) max(14px,env(safe-area-inset-left));min-height:100vh;user-select:none}
+  header{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+  h1{font-size:17px;margin:0 6px 0 0;letter-spacing:.3px;font-weight:650}
+  .src{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:6px 12px 6px 10px;font-size:13px}
+  .src svg{width:14px;height:14px;color:var(--muted);flex:none}
+  .src .ring{width:18px;height:18px}
+  .src .ringwrap{margin-left:2px;font-size:12px}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--idle);flex:none}
+  .dot.on{background:var(--done);box-shadow:0 0 8px var(--done)} .dot.off{background:var(--blocked)}
+  .cnt{font-variant-numeric:tabular-nums;color:var(--muted)} .cnt b{color:var(--text);font-weight:600}
+  .cnt .b{color:var(--blocked)} .cnt .d{color:var(--done)} .cnt .w{color:var(--working)}
+  .spacer{flex:1}
+  .clock{color:var(--muted);font-variant-numeric:tabular-nums;font-size:13px}
+  nav{display:flex;gap:8px;margin-bottom:var(--gap);overflow-x:auto;scrollbar-width:none}
+  nav button{background:var(--panel);color:var(--muted);border:1px solid var(--line);border-radius:12px;padding:10px 14px;font:inherit;font-size:14px;white-space:nowrap}
+  nav button.on{background:var(--text);color:var(--bg);border-color:var(--text);font-weight:600}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));grid-auto-rows:1fr;gap:var(--gap)}
+  .tile{position:relative;min-height:190px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px;display:flex;flex-direction:column;overflow:hidden;cursor:pointer;transition:transform .08s}
+  .tile:active{transform:scale(.97)}
+  .tile::before{content:"";position:absolute;inset:0 0 auto 0;height:5px;background:var(--c)}
+  .tile.blocked{background:linear-gradient(180deg,rgba(255,107,91,.16),var(--panel) 55%);border-color:rgba(255,107,91,.55)}
+  .tile.done{background:linear-gradient(180deg,rgba(63,208,139,.12),var(--panel) 55%)}
+  .tile.focused{outline:2px solid var(--text);outline-offset:-2px}
+  .kind{font-size:12px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);display:flex;gap:6px;align-items:center}
+  .kind svg{width:13px;height:13px;flex:none}
+  .chip{font-size:10px;padding:1px 6px;border-radius:6px;background:var(--panel2);color:var(--muted);border:1px solid var(--line);text-transform:none;letter-spacing:0}
+  .srcb{margin-left:auto;flex:none;white-space:nowrap;font-size:10px;padding:2px 7px;border-radius:999px;border:1px solid var(--sc);color:var(--sc);letter-spacing:.4px}
+  .name{font-size:19px;font-weight:650;margin-top:10px;line-height:1.15;word-break:break-word;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .ws{color:var(--muted);font-size:13px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ttl{color:var(--muted);font-size:12px;margin-top:6px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;opacity:.85}
+  .foot{margin-top:auto;display:flex;align-items:center;gap:8px}
+  .st{font-weight:700;font-size:14px;color:var(--c);display:flex;align-items:center;gap:7px;min-width:0;white-space:nowrap}
+  .st .lbl{overflow:hidden;text-overflow:ellipsis}
+  .g{font-family:var(--mono);font-weight:700;width:1.1em;text-align:center;display:inline-block}
+  .ringwrap{margin-left:auto;flex:none;display:flex;align-items:center;gap:5px;color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
+  .ring{width:22px;height:22px;flex:none}
+  .age{color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
+  .cursor{animation:blink 1s steps(1) infinite}
+  @keyframes blink{50%{opacity:0}}
+  .check{display:inline-block;overflow:hidden;white-space:nowrap;width:1.1em}
+  .check.typing{width:0;animation:type .35s steps(1) .2s forwards}
+  @keyframes type{to{width:1.1em}}
+  .zz{opacity:.55;font-size:12px;animation:float 3s ease-in-out infinite}
+  @keyframes float{0%,100%{transform:translateY(0);opacity:.35}50%{transform:translateY(-2px);opacity:.7}}
+  @media (prefers-reduced-motion: reduce){
+    .cursor,.zz,.check.typing{animation:none} .check.typing{width:1.1em}
+  }
+  .empty{grid-column:1/-1;color:var(--muted);text-align:center;padding:48px 0}
+  section h2{font-size:12px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin:22px 2px 10px;font-weight:600}
+  .row{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:var(--gap)}
+  .btn{background:var(--panel2);border:1px solid var(--line);border-radius:var(--r);padding:16px;color:var(--text);font:inherit;font-weight:600;text-align:left;min-height:76px}
+  .btn:active{transform:scale(.97)}
+  .widget{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px;min-height:76px}
+  .widget .l{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px}
+  .widget .v{font-size:22px;font-weight:650;margin-top:6px;white-space:pre-wrap;word-break:break-word;font-variant-numeric:tabular-nums}
+  .widget.bad .v{color:var(--blocked);font-size:14px}
+  .sheet{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:flex-end;justify-content:center;z-index:10}
+  .sheet.open{display:flex}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:22px 22px 0 0;width:min(900px,100%);max-height:88vh;display:flex;flex-direction:column;padding:18px 18px max(18px,env(safe-area-inset-bottom))}
+  .card h3{margin:0;font-size:20px} .card .meta{color:var(--muted);font-size:13px;margin-top:4px}
+  pre{background:#07080a;border:1px solid var(--line);border-radius:12px;padding:12px;margin:14px 0;overflow:auto;flex:1;min-height:160px;font:12px/1.4 ui-monospace,"SF Mono",Menlo,monospace;white-space:pre-wrap;word-break:break-word;user-select:text}
+  .acts{display:flex;gap:8px;flex-wrap:wrap}
+  .acts button{flex:1 1 140px;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:14px;font:inherit;font-weight:600}
+  .acts button.pri{background:var(--text);color:var(--bg)}
+  .acts button.warn{border-color:rgba(255,107,91,.6);color:var(--blocked)}
+  .reply{display:flex;gap:8px;margin-top:8px}
+  .reply input{flex:1;background:#07080a;border:1px solid var(--line);border-radius:12px;color:var(--text);padding:14px;font:inherit}
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:10px 16px;border-radius:12px;font-weight:600;opacity:0;transition:opacity .2s;pointer-events:none;z-index:20}
+  .toast.show{opacity:1}
+  .banner{display:none;background:rgba(255,107,91,.12);border:1px solid rgba(255,107,91,.5);color:var(--blocked);padding:10px 14px;border-radius:12px;margin-bottom:12px;font-size:13px}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-claude" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2l1.6 6.2L20 6l-4.4 4.8L22 12l-6.4 1.2L20 18l-6.4-2.2L12 22l-1.6-6.2L4 18l4.4-4.8L2 12l6.4-1.2L4 6l6.4 2.2z"/></symbol>
+  <symbol id="i-codex" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" d="M8 8l-4 4 4 4M16 8l4 4-4 4"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" d="M3 11l9-7 9 7v9h-6v-6H9v6H3z"/></symbol>
+  <symbol id="i-brief" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" d="M3 8h18v12H3zM9 8V5h6v3"/></symbol>
+</svg>
+<header>
+  <h1 id="title">herdeck</h1>
+  <div id="srcs" style="display:contents"></div>
+  <div class="spacer"></div>
+  <span class="clock" id="clock"></span>
+</header>
+<div class="banner" id="banner"></div>
+<nav id="filters"></nav>
+<div class="grid" id="grid"></div>
+<section id="plugSec" hidden><h2>Acciones de plugins</h2><div class="row" id="plugs"></div></section>
+<section id="widSec" hidden><h2>Info</h2><div class="row" id="widgets"></div></section>
+
+<div class="sheet" id="sheet">
+  <div class="card">
+    <div style="display:flex;align-items:flex-start;gap:12px">
+      <div style="flex:1"><h3 id="dTitle"></h3><div class="meta" id="dMeta"></div></div>
+      <button class="btn" style="min-height:0;padding:10px 14px" onclick="closeSheet()">Cerrar</button>
+    </div>
+    <pre id="dOut">…</pre>
+    <div class="acts">
+      <button class="pri" onclick="act('open')">Abrir en la consola</button>
+      <button onclick="loadOut()">Refrescar salida</button>
+    </div>
+    <div id="dInput"></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const LBL = {blocked:"Necesita input", done:"Terminado", working:"Trabajando", idle:"En espera", unknown:"¿?"};
+let CFG = {plugin_actions:[], quick_replies:[], allow_input:false, read_lines:60};
+let S = {sources:[], agents:[], widgets:[], now:Date.now()/1000};
+let filter = localStorage.getItem("hd_filter") || "all";
+let current = null, prevBlocked = new Set(), first = true, skew = 0;
+let prevStatus = new Map(), justDone = new Set(), spinI = 0;
+const SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
+const KIND_ICON = {claude:"i-claude", codex:"i-codex"};
+const SRC_ICON = {home:"i-home", work:"i-brief", brief:"i-brief"};
+const reduceMotion = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function ago(ts){
+  const s = Math.max(0, Math.floor(Date.now()/1000 + skew - ts));
+  if (s < 60) return s + "s"; if (s < 3600) return Math.floor(s/60) + "m";
+  if (s < 86400) return Math.floor(s/3600) + "h" + String(Math.floor(s%3600/60)).padStart(2,"0");
+  return Math.floor(s/86400) + "d";
+}
+function toast(msg){ const t=$("toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("show"),1800); }
+function pctColor(p){ return p > 85 ? "#ff6b5b" : p >= 60 ? "#e0af68" : "#5aa9ff"; }
+function ring(p, tip){
+  const v = Math.max(0, Math.min(100, +p || 0));
+  return `<svg class="ring" viewBox="0 0 36 36"><title>${esc(tip)}</title><circle cx="18" cy="18" r="15" fill="none" stroke="#262b33" stroke-width="4"/><circle cx="18" cy="18" r="15" fill="none" stroke="${pctColor(v)}" stroke-width="4" stroke-dasharray="${(v*0.942).toFixed(1)} 94.2" transform="rotate(-90 18 18)" stroke-linecap="round"/></svg>`;
+}
+function icon(id){ return id ? `<svg><use href="#${id}"/></svg>` : ""; }
+function quotaRings(q){
+  if (!q) return "";
+  return [["five_hour","5h"],["seven_day","7d"]].filter(([k])=>q[k]).map(([k,l])=>{
+    const w = q[k], p = Math.round(w.pct), when = w.resets_at ? new Date(w.resets_at*1000).toLocaleString("es-ES",{weekday:"short",hour:"2-digit",minute:"2-digit"}) : "";
+    return `<span class="ringwrap">${ring(p, `Cuota ${l}: ${p}%${when?" · se renueva "+when:""}`)}${l} ${p}%</span>`;
+  }).join("");
+}
+function glyph(a){
+  if (a.status==="working") return `<span class="g spin">${SPIN[spinI]}</span>`;
+  if (a.status==="blocked") return `<span class="g cursor">▌</span>`;
+  if (a.status==="done") return `<span class="g"><span class="check${justDone.has(a.id)?" typing":""}">✓</span></span>`;
+  return `<span class="g zz">zZ</span>`;
+}
+function srcColor(name){ const s=S.sources.find(x=>x.name===name); return (s&&s.color)||"#8b93a1"; }
+
+function renderHeader(){
+  $("srcs").innerHTML = S.sources.map(s => {
+    const c = s.counts||{};
+    return `<div class="src" title="${esc(s.error||"")}"><span class="dot ${s.connected?"on":"off"}"></span>${icon(SRC_ICON[s.icon])}
+      <b style="color:${esc(s.color||"inherit")}">${esc(s.label)}</b>${quotaRings(s.quota)}
+      <span class="cnt">${c.blocked?`<span class="b">● ${c.blocked}</span> `:""}${c.done?`<span class="d">● ${c.done}</span> `:""}${c.working?`<span class="w">● ${c.working}</span> `:""}<b>${(s.connected? Object.values(c).reduce((a,b)=>a+b,0) : "—")}</b></span></div>`;
+  }).join("");
+  const down = S.sources.filter(s=>!s.connected);
+  const b=$("banner"); b.style.display = down.length?"block":"none";
+  b.textContent = down.map(s=>`${s.label}: ${s.error||"sin conexión"}`).join(" · ");
+  const att = S.agents.filter(a=>a.status==="blocked"||a.status==="done").length;
+  const opts = [["all","Todo"],["attention",`Atención${att?" ("+att+")":""}`],["working","Trabajando"],...S.sources.map(s=>[ "src:"+s.name, s.label])];
+  $("filters").innerHTML = opts.map(([k,l])=>`<button class="${k===filter?"on":""}" data-f="${esc(k)}">${esc(l)}</button>`).join("");
+  document.title = (att?`(${att}) `:"") + (CFG.title||"herdeck");
+}
+function visible(){
+  return S.agents.filter(a => filter==="all" || (filter==="attention" && (a.status==="blocked"||a.status==="done"))
+    || (filter==="working" && a.status==="working") || filter==="src:"+a.source);
+}
+function renderGrid(){
+  const list = visible();
+  $("grid").innerHTML = list.length ? list.map(a => `
+    <div class="tile ${esc(a.status)} ${a.focused?"focused":""}" data-id="${esc(a.id)}" style="--c:var(--${LBL[a.status]?a.status:"unknown"});--sc:${esc(srcColor(a.source))}">
+      <div class="kind">${KIND_ICON[String(a.kind).toLowerCase()]?`<span title="${esc(a.kind)}">${icon(KIND_ICON[String(a.kind).toLowerCase()])}</span>`:esc(a.kind)}${a.model?` <span class="chip">${esc(a.model)}</span>`:""}<span class="srcb">${esc(a.source_label)}</span></div>
+      <div class="name">${esc(a.name || a.workspace || a.pane_id)}</div>
+      <div class="ws">${esc([a.name?a.workspace:null, a.tab, a.branch].filter(Boolean).join(" · "))}</div>
+      ${a.title?`<div class="ttl">${esc(a.title)}</div>`:""}
+      <div class="foot"><span class="st">${glyph(a)}<span class="lbl">${esc(LBL[a.status]||a.status)}</span></span><span class="ringwrap">${a.ctx?ring(a.ctx.pct, `Contexto ${Math.round(a.ctx.pct)}%${a.ctx.size?" de "+Math.round(a.ctx.size/1000)+"k":""}`):""}<span class="age" data-since="${a.since}">${ago(a.since)}</span></span></div>
+    </div>`).join("") : `<div class="empty">${S.sources.some(s=>s.connected)?"Sin agentes en este filtro":"Conectando con herdr…"}</div>`;
+}
+function renderExtras(){
+  $("plugSec").hidden = !CFG.plugin_actions.length;
+  $("plugs").innerHTML = CFG.plugin_actions.map(p=>`<button class="btn" data-plug="${esc(p.id)}">${esc(p.label)}<div style="color:var(--muted);font-weight:400;font-size:12px;margin-top:4px">${esc(p.source)}</div></button>`).join("");
+  $("widSec").hidden = !S.widgets.length;
+  $("widgets").innerHTML = S.widgets.map(w=>`<div class="widget ${w.ok?"":"bad"}"><div class="l">${esc(w.label)}</div><div class="v">${esc(w.value||"—")}</div></div>`).join("");
+}
+function alertNew(){
+  const now = new Set(S.agents.filter(a=>a.status==="blocked").map(a=>a.id));
+  const fresh = [...now].filter(id=>!prevBlocked.has(id));
+  if (!first && fresh.length){
+    if (navigator.vibrate) navigator.vibrate([120,80,120]);
+    try{ const ctx=new (window.AudioContext||window.webkitAudioContext)(); const o=ctx.createOscillator(), g=ctx.createGain();
+      o.frequency.value=880; g.gain.value=.08; o.connect(g).connect(ctx.destination); o.start(); o.stop(ctx.currentTime+.18);}catch(e){}
+    const a = S.agents.find(x=>x.id===fresh[0]); toast(`${a.name||a.workspace}: necesita input`);
+  }
+  prevBlocked = now; first = false;
+}
+function apply(state){
+  S = state; skew = state.now - Date.now()/1000;
+  // Only tiles that just turned "done" type the check mark; re-renders keep it static.
+  justDone = new Set(first ? [] : S.agents.filter(a=>a.status==="done" && prevStatus.has(a.id) && prevStatus.get(a.id)!=="done").map(a=>a.id));
+  prevStatus = new Map(S.agents.map(a=>[a.id,a.status]));
+  renderHeader(); renderGrid(); justDone = new Set(); renderExtras(); alertNew();
+  if (current){ const a=S.agents.find(x=>x.id===current.id); if (a){ current=a; meta(); } }
+}
+
+async function post(body){
+  const r = await fetch("/api/action",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  const j = await r.json(); if(!j.ok) throw new Error(j.error||"error"); return j.result;
+}
+function meta(){
+  const a=current; $("dTitle").textContent = a.name || a.workspace || a.pane_id;
+  $("dMeta").textContent = [a.source_label, a.kind, LBL[a.status]||a.status, a.workspace, a.tab, a.pane_id, a.cwd].filter(Boolean).join(" · ");
+}
+function openSheet(id){
+  current = S.agents.find(a=>a.id===id); if(!current) return;
+  meta(); $("dOut").textContent="Cargando…"; $("sheet").classList.add("open");
+  $("dInput").innerHTML = CFG.allow_input ? `
+    <div class="acts" style="margin-top:8px">${CFG.quick_replies.map((q,i)=>`<button class="${q.keys&&q.keys.includes("esc")?"warn":""}" data-q="${i}">${esc(q.label)}</button>`).join("")}</div>
+    <div class="reply"><input id="rText" placeholder="Responder al agente…" autocomplete="off"><button class="btn" style="min-height:0" onclick="sendText()">Enviar</button></div>` : "";
+  loadOut();
+}
+function closeSheet(){ $("sheet").classList.remove("open"); current=null; }
+async function loadOut(){
+  if(!current) return; const id=current.id;
+  try{ const r = await post({action:"read",source:current.source,pane_id:current.pane_id,lines:CFG.read_lines});
+    if(current&&current.id===id){ const o=$("dOut"); o.textContent=(r.text||"").replace(/\s+$/,"")||"(sin salida)"; o.scrollTop=o.scrollHeight; }
+  }catch(e){ $("dOut").textContent="No se pudo leer la salida: "+e.message; }
+}
+async function act(kind, extra){
+  try{ await post(Object.assign({action:kind,source:current.source,pane_id:current.pane_id},extra||{}));
+    const done = kind==="focus"||kind==="open";
+    toast(kind==="open"?"Abierto en la consola":kind==="focus"?"Enfocado":"Enviado"); if(!done) setTimeout(loadOut,900);
+  }catch(e){ toast(e.message); }
+}
+async function openInTerminal(id){
+  const a=S.agents.find(x=>x.id===id); if(!a) return;
+  try{ await post({action:"open",source:a.source,pane_id:a.pane_id}); toast("Abierto en la consola"); }
+  catch(e){ toast(e.message); }
+}
+let pressTimer=null, longPressed=false;
+document.addEventListener("pointerdown", e=>{
+  const t=e.target.closest(".tile"); if(!t) return; longPressed=false;
+  pressTimer=setTimeout(()=>{ longPressed=true; openSheet(t.dataset.id); }, 500);
+});
+["pointerup","pointercancel","pointerleave"].forEach(ev=>document.addEventListener(ev, ()=>clearTimeout(pressTimer)));
+document.addEventListener("contextmenu", e=>{ if(e.target.closest(".tile")) e.preventDefault(); });
+function sendText(){ const t=$("rText").value.trim(); if(!t) return; $("rText").value=""; act("prompt",{text:t}); }
+
+document.addEventListener("click", async e=>{
+  const f=e.target.closest("[data-f]"); if(f){ filter=f.dataset.f; localStorage.setItem("hd_filter",filter); renderHeader(); renderGrid(); return; }
+  const t=e.target.closest(".tile"); if(t){ if(longPressed){ longPressed=false; return; } openInTerminal(t.dataset.id); return; }
+  const q=e.target.closest("[data-q]"); if(q){ const r=CFG.quick_replies[+q.dataset.q]; act(r.keys?"keys":"prompt", r.keys?{keys:r.keys}:{text:r.text}); return; }
+  const p=e.target.closest("[data-plug]"); if(p){ try{ await post({action:"plugin",id:p.dataset.plug}); toast("Acción lanzada"); }catch(err){ toast(err.message); } return; }
+  if(e.target.id==="sheet") closeSheet();
+});
+document.addEventListener("keydown", e=>{ if(e.key==="Enter"&&e.target.id==="rText") sendText(); if(e.key==="Escape") closeSheet(); });
+
+setInterval(()=>{
+  document.querySelectorAll(".age[data-since]").forEach(el=>el.textContent=ago(+el.dataset.since));
+  $("clock").textContent = new Date().toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"});
+},1000);
+
+// One timer drives every spinner, so re-renders never stack per-tile timers.
+if (!reduceMotion) setInterval(()=>{ spinI=(spinI+1)%SPIN.length; document.querySelectorAll(".spin").forEach(el=>el.textContent=SPIN[spinI]); },80);
+
+let wl=null; async function wake(){ try{ if("wakeLock" in navigator) wl=await navigator.wakeLock.request("screen"); }catch(e){} }
+document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible") wake(); });
+
+function connect(){
+  const es = new EventSource("/api/stream");
+  es.addEventListener("state", ev=>apply(JSON.parse(ev.data)));
+  es.onerror = ()=>{ es.close(); $("banner").style.display="block"; $("banner").textContent="Sin conexión con herdeck, reintentando…"; setTimeout(connect,3000); };
+}
+(async()=>{
+  if (location.search.includes("t=")) history.replaceState(null,"","/");
+  CFG = await (await fetch("/api/config")).json(); $("title").textContent = CFG.title||"herdeck";
+  apply(await (await fetch("/api/state")).json()); connect(); wake();
+})();
+</script>
+</body>
+</html>
