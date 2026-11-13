@@ -1,0 +1,68 @@
+{
+  "data": {
+    "name": "personal",
+    "label": "Personal",
+    "color": "#7aa2f7",
+    "icon": "home",
+    "connected": true,
+    "error": null,
+    "remote": false,
+    "quota": {
+      "five_hour": {
+        "pct": 12.3,
+        "resets_at": 1800003600.0
+      }
+    },
+    "agents": [
+      {
+        "pane_id": "w1:p1",
+        "name": null,
+        "kind": "claude",
+        "status": "blocked",
+        "workspace_id": "w1",
+        "workspace": "personal",
+        "branch": null,
+        "tab": "home",
+        "cwd": "/Users/u",
+        "title": "✳ Engram",
+        "focused": false,
+        "session_id": "c07e20e3-2305-4a65-a02a-8d8570552d82",
+        "since": 1800000000.0,
+        "source": "personal",
+        "source_label": "Personal",
+        "id": "personal/w1:p1",
+        "model": "opus",
+        "ctx": {
+          "pct": 42.0,
+          "size": 200000
+        }
+      },
+      {
+        "pane_id": "w1:p2",
+        "name": null,
+        "kind": "codex",
+        "status": "working",
+        "workspace_id": "w1",
+        "workspace": "personal",
+        "branch": null,
+        "tab": "herdeck",
+        "cwd": "/Users/u/herdeck",
+        "title": null,
+        "focused": true,
+        "session_id": null,
+        "since": 1800000000.0,
+        "source": "personal",
+        "source_label": "Personal",
+        "id": "personal/w1:p2"
+      }
+    ],
+    "counts": {
+      "blocked": 1,
+      "working": 1
+    },
+    "workspaces": 2
+  },
+  "claude_ids": [
+    "c07e20e3-2305-4a65-a02a-8d8570552d82"
+  ]
+}

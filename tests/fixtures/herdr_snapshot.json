@@ -1,0 +1,19 @@
+{"snapshot": {
+  "focused_pane_id": "w1:p2",
+  "workspaces": [
+    {"workspace_id": "w1", "label": "personal"},
+    {"workspace_id": "w2", "label": "lab", "branch": "main"}],
+  "tabs": [
+    {"tab_id": "w1:t1", "workspace_id": "w1", "label": "home"},
+    {"tab_id": "w1:t2", "workspace_id": "w1", "label": "herdeck"},
+    {"tab_id": "w2:t1", "workspace_id": "w2", "label": "site"}],
+  "panes": [
+    {"pane_id": "w1:p1", "workspace_id": "w1", "tab_id": "w1:t1", "cwd": "/Users/u", "agent": "claude", "agent_status": "idle", "terminal_title": "✳ Engram"},
+    {"pane_id": "w1:p2", "workspace_id": "w1", "tab_id": "w1:t2", "cwd": "/Users/u/herdeck", "agent": "codex", "agent_status": "working"},
+    {"pane_id": "w2:p1", "workspace_id": "w2", "tab_id": "w2:t1", "cwd": "/Users/u/site"}],
+  "agents": [
+    {"pane_id": "w1:p1", "agent": "claude", "agent_status": "blocked", "terminal_title": "✳ Engram",
+     "agent_session": {"source": "herdr:claude", "agent": "claude", "kind": "id", "value": "c07e20e3-2305-4a65-a02a-8d8570552d82"},
+     "workspace_id": "w1", "tab_id": "w1:t1", "focused": false},
+    {"pane_id": "w1:p2", "agent": "codex", "agent_status": "working", "workspace_id": "w1", "tab_id": "w1:t2"}]
+}}
