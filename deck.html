@@ -223,8 +223,13 @@ function apply(state){
   if (current){ const a=S.agents.find(x=>x.id===current.id); if (a){ current=a; meta(); } }
 }
 
+async function api(url, opts){
+  const r = await fetch(url, opts);
+  if (r.status === 401){ location.replace("/"); throw new Error("unauthorized"); }
+  return r;
+}
 async function post(body){
-  const r = await fetch("/api/action",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  const r = await api("/api/action",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
   const j = await r.json(); if(!j.ok) throw new Error(j.error||"error"); return j.result;
 }
 function meta(){
@@ -289,12 +294,12 @@ document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==
 function connect(){
   const es = new EventSource("/api/stream");
   es.addEventListener("state", ev=>apply(JSON.parse(ev.data)));
-  es.onerror = ()=>{ es.close(); $("banner").style.display="block"; $("banner").textContent="Sin conexión con herdeck, reintentando…"; setTimeout(connect,3000); };
+  es.onerror = ()=>{ es.close(); fetch("/api/config").then(r=>{ if (r.status===401) location.replace("/"); }).catch(()=>{}); $("banner").style.display="block"; $("banner").textContent="Sin conexión con herdeck, reintentando…"; setTimeout(connect,3000); };
 }
 (async()=>{
   if (location.search.includes("t=")) history.replaceState(null,"","/");
-  CFG = await (await fetch("/api/config")).json(); $("title").textContent = CFG.title||"herdeck";
-  apply(await (await fetch("/api/state")).json()); connect(); wake();
+  CFG = await (await api("/api/config")).json(); $("title").textContent = CFG.title||"herdeck";
+  apply(await (await api("/api/state")).json()); connect(); wake();
 })();
 </script>
 </body>

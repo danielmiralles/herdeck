@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import http.server
 import json
+import math
 import os
 import re
 import secrets
@@ -31,7 +32,7 @@ import threading
 import time
 import urllib.parse
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 VERSION = "0.1.0"
 HERE = Path(__file__).resolve().parent
@@ -626,6 +627,57 @@ class Source(BaseSource, threading.Thread):
 # --------------------------------------------------------------------------
 # HTTP
 # --------------------------------------------------------------------------
+PIN_RE = re.compile(r"\d{4,6}")
+LOGIN_MAX_BODY = 1024
+
+
+class PinGuard:
+    """Per-IP and global lockout with exponential backoff for PIN attempts."""
+
+    GLOBAL = "*"
+
+    def __init__(self, clock: Callable[[], float] = time.monotonic, free_per_ip: int = 5,
+                 free_global: int = 20, base: float = 30.0, cap: float = 3600.0) -> None:
+        self._clock = clock
+        self._free_ip = free_per_ip
+        self._free_global = free_global
+        self._base = base
+        self._cap = cap
+        self._lock = threading.Lock()
+        self._fails: Dict[str, int] = {}
+        self._until: Dict[str, float] = {}
+
+    def _remaining(self, key: str, now: float) -> float:
+        return max(0.0, self._until.get(key, 0.0) - now)
+
+    def wait(self, ip: str) -> float:
+        """Seconds left on the lock of ip or of the global key; never counts."""
+        with self._lock:
+            now = self._clock()
+            return max(self._remaining(ip, now), self._remaining(self.GLOBAL, now))
+
+    def failed(self, ip: str) -> float:
+        """Record a wrong attempt; return the seconds the caller is now locked."""
+        with self._lock:
+            now = self._clock()
+            for key, free in ((ip, self._free_ip), (self.GLOBAL, self._free_global)):
+                n = self._fails.get(key, 0) + 1
+                self._fails[key] = n
+                if n >= free:
+                    self._until[key] = now + min(self._cap, self._base * 2 ** (n - free))
+            return max(self._remaining(ip, now), self._remaining(self.GLOBAL, now))
+
+    def succeeded(self, ip: str) -> None:
+        with self._lock:
+            for key in (ip, self.GLOBAL):
+                self._fails.pop(key, None)
+                self._until.pop(key, None)
+
+
+def _same(a: str, b: str) -> bool:
+    return secrets.compare_digest(a.encode("utf-8"), b.encode("utf-8"))
+
+
 class App:
     def __init__(self, cfg: dict) -> None:
         self.cfg = cfg
@@ -633,6 +685,7 @@ class App:
         herdr_bin = cfg.get("herdr_bin") or shutil.which("herdr") or "herdr"
         self.sources = {s["name"]: Source(s, self.hub, herdr_bin) for s in cfg["sources"]}
         self.html = (HERE / "deck.html").read_text(encoding="utf-8")
+        self.html_pin = (HERE / "pin.html").read_text(encoding="utf-8")
 
     def start(self) -> None:
         for s in self.sources.values():
@@ -649,6 +702,14 @@ class App:
             "title": c.get("title", "herdeck"),
             "version": VERSION,
         }
+
+    def manifest(self) -> dict:
+        return {"name": "herdeck", "short_name": "herdeck", "display": "standalone",
+                "background_color": "#0b0d10", "theme_color": "#0b0d10", "start_url": "/"}
+
+    def raw(self) -> dict:
+        return {n: {"socket": s.socket_path, "error": s.error, "raw": s.raw}
+                for n, s in self.sources.items()}
 
     def open_terminal(self, src: "Source") -> dict:
         """Bring the terminal app forward, attaching a new herdr client if none is running."""
@@ -695,7 +756,9 @@ class App:
         raise ValueError("acción desconocida: %s" % kind)
 
 
-def make_handler(app: App, token: str):
+def make_handler(app: Any, token: str, pin: str, guard: PinGuard):
+    cookie_hdr = {"Set-Cookie": "herdeck=%s; Path=/; Max-Age=31536000; SameSite=Strict; HttpOnly" % token}
+
     class H(http.server.BaseHTTPRequestHandler):
         server_version = "herdeck/" + VERSION
 
@@ -705,13 +768,13 @@ def make_handler(app: App, token: str):
 
         def _authed(self) -> bool:
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
-            if q.get("t", [""])[0] == token:
+            if _same(q.get("t", [""])[0], token):
                 return True
-            if self.headers.get("X-Herdeck-Token") == token:
+            if _same(self.headers.get("X-Herdeck-Token") or "", token):
                 return True
             for part in (self.headers.get("Cookie") or "").split(";"):
                 k, _, v = part.strip().partition("=")
-                if k == "herdeck" and secrets.compare_digest(v, token):
+                if k == "herdeck" and _same(v, token):
                     return True
             return False
 
@@ -731,20 +794,22 @@ def make_handler(app: App, token: str):
         def do_GET(self) -> None:  # noqa: N802
             path = urllib.parse.urlparse(self.path).path
             if not self._authed():
+                if path in ("/", "/index.html"):
+                    ua = "".join(c if c.isprintable() else "?" for c in (self.headers.get("User-Agent") or "")[:80])
+                    log("[auth] sin credenciales: %s %s UA=%s" % (self.client_address[0], path, ua))
+                    return self._send(200, app.html_pin.encode(), "text/html; charset=utf-8")
                 return self._send(401, "Falta el token: abre la URL con ?t=TOKEN".encode(), "text/plain; charset=utf-8")
-            cookie = {"Set-Cookie": "herdeck=%s; Path=/; Max-Age=31536000; SameSite=Strict; HttpOnly" % token}
+            cookie = cookie_hdr
             if path in ("/", "/index.html"):
                 return self._send(200, app.html.encode(), "text/html; charset=utf-8", cookie)
             if path == "/manifest.webmanifest":
-                return self._json(200, {"name": "herdeck", "short_name": "herdeck", "display": "standalone",
-                                        "background_color": "#0b0d10", "theme_color": "#0b0d10", "start_url": "/"})
+                return self._json(200, app.manifest())
             if path == "/api/config":
                 return self._json(200, app.client_config())
             if path == "/api/state":
                 return self._json(200, app.hub.state())
             if path == "/api/raw":
-                return self._json(200, {n: {"socket": s.socket_path, "error": s.error, "raw": s.raw}
-                                        for n, s in app.sources.items()})
+                return self._json(200, app.raw())
             if path == "/api/stream":
                 return self._stream()
             self._send(404, b"not found", "text/plain")
@@ -769,7 +834,29 @@ def make_handler(app: App, token: str):
             except (BrokenPipeError, ConnectionResetError, OSError):
                 return
 
+        def _login(self) -> None:
+            ip = self.client_address[0]
+            wait = guard.wait(ip)
+            if wait > 0:
+                return self._json(429, {"ok": False, "error": "locked", "retry_after": math.ceil(wait)})
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                n = -1
+            if n < 0 or n > LOGIN_MAX_BODY:
+                return self._json(400, {"ok": False, "error": "bad_request"})
+            try:
+                got = json.loads(self.rfile.read(n) or b"{}").get("pin")
+            except (ValueError, AttributeError):
+                got = None
+            if isinstance(got, str) and _same(got, pin):
+                guard.succeeded(ip)
+                return self._send(200, b'{"ok": true}', "application/json; charset=utf-8", cookie_hdr)
+            return self._json(401, {"ok": False, "error": "bad_pin", "retry_after": math.ceil(guard.failed(ip))})
+
         def do_POST(self) -> None:  # noqa: N802
+            if urllib.parse.urlparse(self.path).path == "/api/login":
+                return self._login()
             if not self._authed():
                 return self._json(401, {"error": "unauthorized"})
             if urllib.parse.urlparse(self.path).path != "/api/action":
@@ -803,6 +890,12 @@ def load_config(path: Path) -> dict:
     if not cfg.get("token"):
         cfg["token"] = secrets.token_urlsafe(18)
         path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    if not cfg.get("pin"):
+        cfg["pin"] = "%06d" % secrets.randbelow(10 ** 6)
+        path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    elif not PIN_RE.fullmatch(str(cfg["pin"])):
+        raise SystemExit("config: 'pin' debe tener entre 4 y 6 dígitos")
+    cfg["pin"] = str(cfg["pin"])
     names = [s.get("name") for s in cfg.get("sources", [])]
     if not names or len(set(names)) != len(names) or not all(names):
         raise SystemExit("config: cada fuente necesita un 'name' único")
@@ -831,10 +924,11 @@ def main() -> None:
     url = "http://%s:%d/?t=%s" % (shown, port, cfg["token"])
     if args.print_url:
         print(url)
+        print("PIN: %s" % cfg["pin"])
         return
     app = App(cfg)
     app.start()
-    srv = Server((host, port), make_handler(app, cfg["token"]))
+    srv = Server((host, port), make_handler(app, cfg["token"], cfg["pin"], PinGuard()))
     log("herdeck %s escuchando en %s:%d" % (VERSION, host, port))
     log("abre en la tablet:", url)
     try:

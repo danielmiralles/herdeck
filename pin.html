@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0b0d10">
+<link rel="manifest" href="/manifest.webmanifest">
+<title>herdeck</title>
+<style>
+  :root{
+    --bg:#0b0d10; --panel:#14171c; --panel2:#1b1f26; --line:#262b33; --text:#e6e8eb; --muted:#8b93a1;
+    --blocked:#ff6b5b; --done:#3fd08b; --working:#5aa9ff; --idle:#5c6370; --unknown:#b48ead; --warn:#e0af68;
+    --mono:"SF Mono",ui-monospace,Menlo,monospace;
+    --r:16px; --gap:12px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;background:var(--bg);color:var(--text);font:15px/1.35 -apple-system,BlinkMacSystemFont,"SF Pro Text","Inter",system-ui,sans-serif;}
+  body{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;user-select:none;
+    padding:max(14px,env(safe-area-inset-top)) max(14px,env(safe-area-inset-right)) max(14px,env(safe-area-inset-bottom)) max(14px,env(safe-area-inset-left))}
+  h1{font-size:17px;margin:0;letter-spacing:.3px;font-weight:650}
+  #dots{display:flex;gap:14px;height:14px}
+  #dots i{width:12px;height:12px;border-radius:50%;border:2px solid var(--idle);display:block}
+  #dots i.on{background:var(--text);border-color:var(--text)}
+  #msg{min-height:1.4em;color:var(--muted);font-size:14px;text-align:center}
+  #msg.err{color:var(--blocked)}
+  #pinpad{display:grid;grid-template-columns:repeat(3,76px);gap:var(--gap)}
+  #pinpad button{height:68px;min-width:64px;border-radius:var(--r);border:1px solid var(--line);background:var(--panel);color:var(--text);
+    font:600 24px var(--mono);cursor:pointer;touch-action:manipulation}
+  #pinpad button:active{background:var(--panel2)}
+  #pinpad button:disabled{opacity:.4}
+  #pinpad button.k-go{font:600 15px -apple-system,system-ui,sans-serif;color:var(--working)}
+</style>
+</head>
+<body>
+<h1>herdeck</h1>
+<div id="dots" aria-hidden="true"></div>
+<div id="msg" role="status">Introduce el PIN</div>
+<div id="pinpad"></div>
+<script>
+const $ = id => document.getElementById(id);
+const MAX = 6, MIN = 4;
+let pin = "", busy = false, timer = null;
+
+for (let i = 0; i < MAX; i++) $("dots").appendChild(document.createElement("i"));
+const KEYS = ["1","2","3","4","5","6","7","8","9","back","0","go"];
+for (const k of KEYS) {
+  const b = document.createElement("button");
+  b.type = "button"; b.dataset.k = k;
+  if (k === "back") b.textContent = "⌫";
+  else if (k === "go") { b.textContent = "Entrar"; b.className = "k-go"; }
+  else b.textContent = k;
+  $("pinpad").appendChild(b);
+}
+function say(t, err){ $("msg").textContent = t; $("msg").className = err ? "err" : ""; }
+function paint(){ [...$("dots").children].forEach((d,i)=>d.classList.toggle("on", i < pin.length)); }
+function lock(on){ for (const b of $("pinpad").children) b.disabled = on; }
+function countdown(secs){
+  lock(true);
+  const end = Date.now() + secs * 1000;
+  const tick = () => {
+    const left = Math.ceil((end - Date.now()) / 1000);
+    if (left <= 0) { clearInterval(timer); timer = null; lock(false); say("Introduce el PIN"); return; }
+    say("Demasiados intentos. Espera " + left + " s", true);
+  };
+  clearInterval(timer); tick(); timer = setInterval(tick, 250);
+}
+async function submit(){
+  if (busy || timer || pin.length < MIN) return;
+  busy = true; lock(true);
+  try {
+    const r = await fetch("/api/login", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({pin})});
+    const j = await r.json().catch(()=>({}));
+    if (r.status === 200 && j.ok) { location.replace("/"); return; }
+    pin = ""; paint();
+    if (r.status === 429 || (j.retry_after > 0)) { busy = false; countdown(j.retry_after || 30); return; }
+    say("PIN incorrecto", true);
+  } catch (e) {
+    pin = ""; paint(); say("Sin conexión con herdeck", true);
+  }
+  busy = false; if (!timer) lock(false);
+}
+$("pinpad").addEventListener("click", ev => {
+  const b = ev.target.closest("button"); if (!b || busy || timer) return;
+  const k = b.dataset.k;
+  if (k === "back") pin = pin.slice(0, -1);
+  else if (k === "go") return submit();
+  else if (pin.length < MAX) pin += k;
+  paint(); say("Introduce el PIN");
+  if (pin.length === MAX) submit();
+});
+</script>
+</body>
+</html>

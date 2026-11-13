@@ -25,7 +25,7 @@ PY="$(command -v python3 || true)"
 command -v herdr >/dev/null || echo "Aviso: 'herdr' no está en el PATH; pon 'herdr_bin' en la config."
 
 mkdir -p "$APP_DIR" "$LOG_DIR" "$(dirname "$PLIST")"
-cp "$SRC/herdeck.py" "$SRC/deck.html" "$SRC/config.example.json" "$APP_DIR/"
+cp "$SRC/herdeck.py" "$SRC/deck.html" "$SRC/pin.html" "$SRC/config.example.json" "$APP_DIR/"
 
 # Statusline de Claude Code: escribe ~/.claude/herdeck/<sesión>.json (contexto y cuota en el deck)
 mkdir -p "$HOME/.claude"
