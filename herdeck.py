@@ -280,28 +280,140 @@ def normalize_snapshot(result: dict) -> Dict[str, Any]:
 # --------------------------------------------------------------------------
 # Fuente: un servidor herdr (local o remoto)
 # --------------------------------------------------------------------------
-class Source(threading.Thread):
-    def __init__(self, cfg: dict, hub: Hub, herdr_bin: str) -> None:
-        super().__init__(daemon=True, name="src-" + cfg["name"])
+class BaseSource:
+    """State, publishing and Claude statusline info shared by every backend."""
+
+    def __init__(self, cfg: dict, hub: Hub) -> None:
         self.cfg = cfg
         self.name_ = cfg["name"]
         self.hub = hub
-        self.herdr_bin = herdr_bin
-        self.ssh_proc: Optional[subprocess.Popen] = None
-        self.socket_path = os.path.expanduser(cfg.get("socket") or self._default_socket())
         self.since: Dict[str, tuple] = {}  # pane_id -> (status, ts)
         self.error: Optional[str] = None
         self.connected = False
-        self.raw: dict = {}
         self.dirty = threading.Event()
         self.pub_lock = threading.Lock()
         # Claude Code info (statusline files), refreshed by a helper thread
-        self.claude_ids: List[str] = []
+        self.claude_keys: List[str] = []
         self.claude_sessions: Dict[str, dict] = {}
         self.claude_rate: Optional[dict] = None
         self.claude_last = 0.0
         self.claude_busy = False
         self.claude_failed = False
+
+    # --- hooks for backends -------------------------------------------------
+    def snapshot_rows(self) -> Optional[Dict[str, Any]]:
+        """{"agents": [...], "workspaces": int}, or None when there is nothing to show."""
+        raise NotImplementedError
+
+    def claude_key(self, row: dict) -> Optional[str]:
+        """Key under which Claude statusline info is stored for this row, if any."""
+        return None
+
+    def focus(self, pane: str) -> dict:
+        raise NotImplementedError
+
+    # --- estado ------------------------------------------------------------
+    def publish(self) -> None:
+        with self.pub_lock:
+            self._publish()
+        self.maybe_refresh_claude()
+
+    def _publish(self) -> None:
+        now = time.time()
+        data = {
+            "name": self.name_,
+            "label": self.cfg.get("label", self.name_),
+            "color": self.cfg.get("color"),
+            "icon": self.cfg.get("icon") or ("work" if self.cfg.get("ssh") else "home"),
+            "connected": self.connected,
+            "error": self.error,
+            "remote": bool(self.cfg.get("ssh")),
+            "quota": quota_info(self.claude_rate, now),
+            "agents": [],
+            "counts": {},
+        }
+        norm = self.snapshot_rows()
+        if norm is not None:
+            seen = set()
+            for a in norm["agents"]:
+                key = a["pane_id"]
+                seen.add(key)
+                prev = self.since.get(key)
+                if not prev or prev[0] != a["status"]:
+                    self.since[key] = (a["status"], now)
+                a["since"] = self.since[key][1]
+                a["source"] = self.name_
+                a["source_label"] = data["label"]
+                a["id"] = "%s/%s" % (self.name_, key)
+                info = self.claude_sessions.get(self.claude_key(a) or "")
+                if info:
+                    a["model"] = model_short(info.get("model"))
+                    a["ctx"] = context_info(info.get("context_window"))
+                data["counts"][a["status"]] = data["counts"].get(a["status"], 0) + 1
+            for k in list(self.since):
+                if k not in seen:
+                    del self.since[k]
+            data["agents"] = norm["agents"]
+            data["workspaces"] = norm["workspaces"]
+            self.claude_keys = sorted({k for k in (self.claude_key(a) for a in norm["agents"]) if k})
+        self.hub.update_source(self.name_, data)
+
+    # --- info de Claude Code (ficheros del statusline) ----------------------
+    def maybe_refresh_claude(self) -> None:
+        """Starts a background read of the statusline files, at most every ~10 s."""
+        if self.claude_busy or time.time() - self.claude_last < CLAUDE_REFRESH_SECONDS:
+            return
+        if not self.connected or not self.claude_keys:
+            return
+        self.claude_busy, self.claude_last = True, time.time()
+        threading.Thread(target=self._refresh_claude, args=(list(self.claude_keys),),
+                         daemon=True, name="claude-" + self.name_).start()
+
+    def _refresh_claude(self, ids: List[str]) -> None:
+        try:
+            if self.cfg.get("ssh"):
+                cmd = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", self.cfg["ssh"],
+                       "python3", "-"] + ids
+            else:
+                cmd = [sys.executable, "-"] + ids
+            r = subprocess.run(cmd, input=CLAUDE_READER, capture_output=True, text=True, timeout=20)
+            if r.returncode != 0:
+                raise RuntimeError(r.stderr.strip()[:200] or "código %d" % r.returncode)
+            out = json.loads(r.stdout)
+            sessions = out.get("sessions")
+            self.claude_sessions = sessions if isinstance(sessions, dict) else {}
+            self.claude_rate = out.get("rate_limits") if isinstance(out.get("rate_limits"), dict) else None
+            self.claude_failed = False
+        except Exception as e:  # noqa: BLE001 — sin datos, el deck se ve como siempre
+            if not self.claude_failed:
+                log("[%s] no se pudo leer la info de Claude: %s" % (self.name_, str(e)[:200]))
+            self.claude_failed = True
+            self.claude_sessions, self.claude_rate = {}, None
+        finally:
+            self.claude_busy = False
+        with self.pub_lock:
+            self._publish()
+
+
+class Source(BaseSource, threading.Thread):
+    """herdr backend: one herdr server, local or behind an ssh tunnel."""
+
+    def __init__(self, cfg: dict, hub: Hub, herdr_bin: str) -> None:
+        threading.Thread.__init__(self, daemon=True, name="src-" + cfg["name"])
+        BaseSource.__init__(self, cfg, hub)
+        self.herdr_bin = herdr_bin
+        self.ssh_proc: Optional[subprocess.Popen] = None
+        self.socket_path = os.path.expanduser(cfg.get("socket") or self._default_socket())
+        self.raw: dict = {}
+
+    def snapshot_rows(self) -> Optional[Dict[str, Any]]:
+        return normalize_snapshot(self.raw) if self.connected and self.raw else None
+
+    def claude_key(self, row: dict) -> Optional[str]:
+        sid = row.get("session_id")
+        if row["kind"].lower() == "claude" and sid and SESSION_ID_RE.fullmatch(str(sid)):
+            return str(sid)
+        return None
 
     # --- ubicación del socket -------------------------------------------
     def _default_socket(self) -> str:
@@ -352,90 +464,6 @@ class Source(threading.Thread):
                 raise ConnectionError("túnel SSH cerrado: " + err.strip())
             time.sleep(0.1)
         raise ConnectionError("el túnel SSH no creó el socket local")
-
-    # --- estado ------------------------------------------------------------
-    def publish(self) -> None:
-        with self.pub_lock:
-            self._publish()
-        self.maybe_refresh_claude()
-
-    def _publish(self) -> None:
-        now = time.time()
-        data = {
-            "name": self.name_,
-            "label": self.cfg.get("label", self.name_),
-            "color": self.cfg.get("color"),
-            "icon": self.cfg.get("icon") or ("work" if self.cfg.get("ssh") else "home"),
-            "connected": self.connected,
-            "error": self.error,
-            "remote": bool(self.cfg.get("ssh")),
-            "quota": quota_info(self.claude_rate, now),
-            "agents": [],
-            "counts": {},
-        }
-        if self.connected and self.raw:
-            norm = normalize_snapshot(self.raw)
-            seen = set()
-            for a in norm["agents"]:
-                key = a["pane_id"]
-                seen.add(key)
-                prev = self.since.get(key)
-                if not prev or prev[0] != a["status"]:
-                    self.since[key] = (a["status"], now)
-                a["since"] = self.since[key][1]
-                a["source"] = self.name_
-                a["source_label"] = data["label"]
-                a["id"] = "%s/%s" % (self.name_, key)
-                info = self.claude_sessions.get(a.get("session_id") or "")
-                if info:
-                    a["model"] = model_short(info.get("model"))
-                    a["ctx"] = context_info(info.get("context_window"))
-                data["counts"][a["status"]] = data["counts"].get(a["status"], 0) + 1
-            for k in list(self.since):
-                if k not in seen:
-                    del self.since[k]
-            data["agents"] = norm["agents"]
-            data["workspaces"] = norm["workspaces"]
-            self.claude_ids = sorted({str(a["session_id"]) for a in norm["agents"]
-                                      if a["kind"].lower() == "claude" and a.get("session_id")
-                                      and SESSION_ID_RE.fullmatch(str(a["session_id"]))})
-        self.hub.update_source(self.name_, data)
-
-    # --- info de Claude Code (ficheros del statusline) ----------------------
-    def maybe_refresh_claude(self) -> None:
-        """Starts a background read of the statusline files, at most every ~10 s."""
-        if self.claude_busy or time.time() - self.claude_last < CLAUDE_REFRESH_SECONDS:
-            return
-        if not self.connected or not self.claude_ids:
-            return
-        self.claude_busy, self.claude_last = True, time.time()
-        threading.Thread(target=self._refresh_claude, args=(list(self.claude_ids),),
-                         daemon=True, name="claude-" + self.name_).start()
-
-    def _refresh_claude(self, ids: List[str]) -> None:
-        try:
-            if self.cfg.get("ssh"):
-                cmd = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", self.cfg["ssh"],
-                       "python3", "-"] + ids
-            else:
-                cmd = [sys.executable, "-"] + ids
-            r = subprocess.run(cmd, input=CLAUDE_READER, capture_output=True, text=True, timeout=20)
-            if r.returncode != 0:
-                raise RuntimeError(r.stderr.strip()[:200] or "código %d" % r.returncode)
-            out = json.loads(r.stdout)
-            sessions = out.get("sessions")
-            self.claude_sessions = sessions if isinstance(sessions, dict) else {}
-            self.claude_rate = out.get("rate_limits") if isinstance(out.get("rate_limits"), dict) else None
-            self.claude_failed = False
-        except Exception as e:  # noqa: BLE001 — sin datos, el deck se ve como siempre
-            if not self.claude_failed:
-                log("[%s] no se pudo leer la info de Claude: %s" % (self.name_, str(e)[:200]))
-            self.claude_failed = True
-            self.claude_sessions, self.claude_rate = {}, None
-        finally:
-            self.claude_busy = False
-        with self.pub_lock:
-            self._publish()
 
     def refresh(self) -> List[str]:
         try:

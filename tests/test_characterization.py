@@ -58,9 +58,7 @@ class PublishGoldenTest(unittest.TestCase):
         with mock.patch("herdeck.time.time", return_value=FROZEN_NOW):
             src._publish()
         data = self.strip_added(src.hub.sources["personal"])
-        ids = getattr(src, "claude_keys", None)
-        if ids is None:
-            ids = src.claude_ids
+        ids = src.claude_keys
         actual = json.loads(json.dumps({"data": data, "claude_ids": ids}))
         from support import FIXTURES
         path = FIXTURES / GOLDEN
