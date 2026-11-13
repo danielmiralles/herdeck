@@ -87,7 +87,7 @@ class PinConfigTest(unittest.TestCase):
             self.assertEqual(cfg["pin"], "4321")
 
     def test_rejects_invalid_pin(self):
-        for bad in ("12ab", "123"):
+        for bad in ("12ab", "123", "\u0661\u0662\u0663\u0664"):
             with tempfile.TemporaryDirectory() as d:
                 with self.assertRaises(SystemExit):
                     herdeck.load_config(self._cfg(d, pin=bad))

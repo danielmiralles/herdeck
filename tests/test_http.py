@@ -85,6 +85,34 @@ class HttpTest(unittest.TestCase):
         r, _ = self.req("POST", "/api/login", json.dumps({"pin": "1" * 5000}))
         self.assertEqual(r.status, 400)
 
+    def test_concurrent_wrong_logins_are_capped(self):
+        results = []
+        lock = threading.Lock()
+
+        def go():
+            r, _ = self.login("000000")
+            with lock:
+                results.append(r.status)
+
+        ts = [threading.Thread(target=go) for _ in range(20)]
+        for t in ts:
+            t.start()
+        for t in ts:
+            t.join()
+        self.assertEqual(results.count(401), 5)
+        self.assertEqual(results.count(429), 15)
+
+    def test_stalled_login_body_times_out(self):
+        import socket
+        herdeck.LOGIN_READ_TIMEOUT = 0.3
+        try:
+            s = socket.create_connection(("127.0.0.1", self.port), timeout=3)
+            s.sendall(b"POST /api/login HTTP/1.1\r\nHost: x\r\nContent-Length: 20\r\n\r\n{")
+            self.assertEqual(s.recv(100), b"")  # server closes without a response
+            s.close()
+        finally:
+            herdeck.LOGIN_READ_TIMEOUT = 5.0
+
 
 if __name__ == "__main__":
     unittest.main()

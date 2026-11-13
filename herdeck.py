@@ -627,7 +627,8 @@ class Source(BaseSource, threading.Thread):
 # --------------------------------------------------------------------------
 # HTTP
 # --------------------------------------------------------------------------
-PIN_RE = re.compile(r"\d{4,6}")
+PIN_RE = re.compile(r"[0-9]{4,6}")
+LOGIN_READ_TIMEOUT = 5.0
 LOGIN_MAX_BODY = 1024
 
 
@@ -666,6 +667,25 @@ class PinGuard:
                 if n >= free:
                     self._until[key] = now + min(self._cap, self._base * 2 ** (n - free))
             return max(self._remaining(ip, now), self._remaining(self.GLOBAL, now))
+
+    def attempt(self, ip: str, check: Callable[[], bool]) -> "tuple[str, float]":
+        """Atomic lock check + compare + record. Returns ("locked"|"ok"|"bad", seconds)."""
+        with self._lock:
+            now = self._clock()
+            left = max(self._remaining(ip, now), self._remaining(self.GLOBAL, now))
+            if left > 0:
+                return "locked", left
+            if check():
+                for key in (ip, self.GLOBAL):
+                    self._fails.pop(key, None)
+                    self._until.pop(key, None)
+                return "ok", 0.0
+            for key, free in ((ip, self._free_ip), (self.GLOBAL, self._free_global)):
+                n = self._fails.get(key, 0) + 1
+                self._fails[key] = n
+                if n >= free:
+                    self._until[key] = now + min(self._cap, self._base * 2 ** (n - free))
+            return "bad", max(self._remaining(ip, now), self._remaining(self.GLOBAL, now))
 
     def succeeded(self, ip: str) -> None:
         with self._lock:
@@ -836,9 +856,6 @@ def make_handler(app: Any, token: str, pin: str, guard: PinGuard):
 
         def _login(self) -> None:
             ip = self.client_address[0]
-            wait = guard.wait(ip)
-            if wait > 0:
-                return self._json(429, {"ok": False, "error": "locked", "retry_after": math.ceil(wait)})
             try:
                 n = int(self.headers.get("Content-Length") or 0)
             except ValueError:
@@ -846,13 +863,21 @@ def make_handler(app: Any, token: str, pin: str, guard: PinGuard):
             if n < 0 or n > LOGIN_MAX_BODY:
                 return self._json(400, {"ok": False, "error": "bad_request"})
             try:
-                got = json.loads(self.rfile.read(n) or b"{}").get("pin")
+                self.connection.settimeout(LOGIN_READ_TIMEOUT)
+                raw = self.rfile.read(n) if n else b""
+            except OSError:  # includes socket.timeout: drop the connection quietly
+                self.close_connection = True
+                return
+            try:
+                got = json.loads(raw or b"{}").get("pin")
             except (ValueError, AttributeError):
                 got = None
-            if isinstance(got, str) and _same(got, pin):
-                guard.succeeded(ip)
+            verdict, secs = guard.attempt(ip, lambda: isinstance(got, str) and _same(got, pin))
+            if verdict == "locked":
+                return self._json(429, {"ok": False, "error": "locked", "retry_after": math.ceil(secs)})
+            if verdict == "ok":
                 return self._send(200, b'{"ok": true}', "application/json; charset=utf-8", cookie_hdr)
-            return self._json(401, {"ok": False, "error": "bad_pin", "retry_after": math.ceil(guard.failed(ip))})
+            return self._json(401, {"ok": False, "error": "bad_pin", "retry_after": math.ceil(secs)})
 
         def do_POST(self) -> None:  # noqa: N802
             if urllib.parse.urlparse(self.path).path == "/api/login":
