@@ -2,3 +2,6 @@ __pycache__/
 *.pyc
 .DS_Store
 .superpowers/
+docs/superpowers/
+odd/
+.atl/
