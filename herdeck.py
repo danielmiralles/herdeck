@@ -7,7 +7,7 @@ Puente sin dependencias (solo stdlib, Python >= 3.9):
     events.subscribe (push, sin polling agresivo).
   * Sirve un deck web (deck.html) + API JSON + Server-Sent Events.
   * Ejecuta acciones: enfocar agente, leer salida, responder (opcional),
-    invocar acciones de plugins de herdr y widgets de comandos propios.
+    invocar acciones de plugins de herdr.
 
 Uso:
   python3 herdeck.py                       # usa ~/.config/herdeck/config.json
@@ -89,17 +89,10 @@ class Hub:
         self.cond = threading.Condition()
         self.version = 0
         self.sources: Dict[str, Dict[str, Any]] = {}
-        self.widgets: Dict[str, Dict[str, Any]] = {}
 
     def update_source(self, name: str, data: Dict[str, Any]) -> None:
         with self.cond:
             self.sources[name] = data
-            self.version += 1
-            self.cond.notify_all()
-
-    def update_widget(self, wid: str, data: Dict[str, Any]) -> None:
-        with self.cond:
-            self.widgets[wid] = data
             self.version += 1
             self.cond.notify_all()
 
@@ -116,7 +109,6 @@ class Hub:
                 "now": time.time(),
                 "sources": summary,
                 "agents": agents,
-                "widgets": list(self.widgets.values()),
             }
 
     def wait_change(self, seen: int, timeout: float) -> int:
@@ -609,31 +601,6 @@ class Source(BaseSource, threading.Thread):
 
 
 # --------------------------------------------------------------------------
-# Widgets: comandos propios cuya primera línea se muestra en el deck
-# --------------------------------------------------------------------------
-class Widget(threading.Thread):
-    def __init__(self, idx: int, cfg: dict, hub: Hub) -> None:
-        super().__init__(daemon=True, name="widget-%d" % idx)
-        self.cfg, self.hub, self.id = cfg, hub, "w%d" % idx
-
-    def run(self) -> None:
-        interval = max(5, int(self.cfg.get("interval", 60)))
-        while True:
-            value, ok = "", True
-            try:
-                r = subprocess.run(self.cfg["cmd"], capture_output=True, text=True,
-                                   timeout=min(interval, 60), shell=isinstance(self.cfg["cmd"], str))
-                value = (r.stdout.strip() or r.stderr.strip()).splitlines()[0:3]
-                value = "\n".join(value)
-                ok = r.returncode == 0
-            except Exception as e:  # noqa: BLE001
-                value, ok = str(e)[:120], False
-            self.hub.update_widget(self.id, {"id": self.id, "label": self.cfg.get("label", self.id),
-                                             "value": value, "ok": ok, "ts": time.time()})
-            time.sleep(interval)
-
-
-# --------------------------------------------------------------------------
 # HTTP
 # --------------------------------------------------------------------------
 class App:
@@ -642,15 +609,12 @@ class App:
         self.hub = Hub()
         herdr_bin = cfg.get("herdr_bin") or shutil.which("herdr") or "herdr"
         self.sources = {s["name"]: Source(s, self.hub, herdr_bin) for s in cfg["sources"]}
-        self.widgets = [Widget(i, w, self.hub) for i, w in enumerate(cfg.get("widgets", []))]
         self.html = (HERE / "deck.html").read_text(encoding="utf-8")
 
     def start(self) -> None:
         for s in self.sources.values():
             s.publish()
             s.start()
-        for w in self.widgets:
-            w.start()
 
     def client_config(self) -> dict:
         c = self.cfg

@@ -33,10 +33,5 @@
 
   "plugin_actions": [
     { "id": "gh-personal", "label": "GitHub PRs", "source": "personal", "action": "kukv.github-dash.open" }
-  ],
-
-  "widgets": [
-    { "label": "Carga Mac", "cmd": ["sh", "-c", "uptime | sed 's/.*load averages*: //'"], "interval": 30 },
-    { "label": "PRs abiertas", "cmd": ["sh", "-c", "gh search prs --author=@me --state=open --json number --jq length"], "interval": 300 }
   ]
 }

@@ -16,7 +16,6 @@ Convierte una tablet o un móvil en un panel tipo Stream Deck que muestra **en t
 - **Tocar una tesela**: enfoca el agente y lo abre en tu consola (`terminal_app`, p. ej. `"Ghostty"`). Si ya hay un cliente herdr de esa fuente abierto en el Mac, solo trae la terminal al frente; si no, abre una ventana nueva con `herdr` o `herdr --remote <ssh>`.
 - **Detalle** (mantener pulsada una tesela): las últimas líneas de salida del agente y el botón *Abrir en la consola*. Si activas `allow_input`, también respuestas rápidas (Enter/Esc/texto) y un campo para escribirle.
 - **Acciones de plugins**: botones que ejecutan `herdr plugin action invoke …` en el servidor que elijas.
-- **Widgets**: cualquier comando cuya salida quieras ver (PRs abiertas, carga del Mac, colas, etc.).
 - Sin dependencias: Python ≥ 3.9 y la stdlib, nada más.
 
 ## Instalación (Mac)

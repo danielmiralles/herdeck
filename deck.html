@@ -70,10 +70,6 @@
   .row{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:var(--gap)}
   .btn{background:var(--panel2);border:1px solid var(--line);border-radius:var(--r);padding:16px;color:var(--text);font:inherit;font-weight:600;text-align:left;min-height:76px}
   .btn:active{transform:scale(.97)}
-  .widget{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px;min-height:76px}
-  .widget .l{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px}
-  .widget .v{font-size:22px;font-weight:650;margin-top:6px;white-space:pre-wrap;word-break:break-word;font-variant-numeric:tabular-nums}
-  .widget.bad .v{color:var(--blocked);font-size:14px}
   .sheet{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:flex-end;justify-content:center;z-index:10}
   .sheet.open{display:flex}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:22px 22px 0 0;width:min(900px,100%);max-height:88vh;display:flex;flex-direction:column;padding:18px 18px max(18px,env(safe-area-inset-bottom))}
@@ -107,7 +103,6 @@
 <nav id="filters"></nav>
 <div class="grid" id="grid"></div>
 <section id="plugSec" hidden><h2>Acciones de plugins</h2><div class="row" id="plugs"></div></section>
-<section id="widSec" hidden><h2>Info</h2><div class="row" id="widgets"></div></section>
 
 <div class="sheet" id="sheet">
   <div class="card">
@@ -128,7 +123,7 @@
 <script>
 const LBL = {blocked:"Necesita input", done:"Terminado", working:"Trabajando", idle:"En espera", unknown:"¿?"};
 let CFG = {plugin_actions:[], quick_replies:[], allow_input:false, read_lines:60};
-let S = {sources:[], agents:[], widgets:[], now:Date.now()/1000};
+let S = {sources:[], agents:[], now:Date.now()/1000};
 let filter = localStorage.getItem("hd_filter") || "all";
 let current = null, prevBlocked = new Set(), first = true, skew = 0;
 let prevStatus = new Map(), justDone = new Set(), spinI = 0;
@@ -200,8 +195,6 @@ function renderGrid(){
 function renderExtras(){
   $("plugSec").hidden = !CFG.plugin_actions.length;
   $("plugs").innerHTML = CFG.plugin_actions.map(p=>`<button class="btn" data-plug="${esc(p.id)}">${esc(p.label)}<div style="color:var(--muted);font-weight:400;font-size:12px;margin-top:4px">${esc(p.source)}</div></button>`).join("");
-  $("widSec").hidden = !S.widgets.length;
-  $("widgets").innerHTML = S.widgets.map(w=>`<div class="widget ${w.ok?"":"bad"}"><div class="l">${esc(w.label)}</div><div class="v">${esc(w.value||"—")}</div></div>`).join("");
 }
 function alertNew(){
   const now = new Set(S.agents.filter(a=>a.status==="blocked").map(a=>a.id));

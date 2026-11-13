@@ -87,5 +87,17 @@ class HubStateTest(unittest.TestCase):
         self.assertEqual(out, [("blocked", 3), ("blocked", 1), ("done", 9), ("working", 2), ("idle", 5)])
 
 
+class WidgetsRemovedTest(unittest.TestCase):
+    def test_state_has_no_widgets(self):
+        self.assertNotIn("widgets", herdeck.Hub().state())
+
+    def test_widgets_config_key_is_ignored(self):
+        cfg = {"sources": [{"name": "personal", "socket": "/nonexistent.sock"}],
+               "widgets": [{"label": "x", "cmd": ["true"]}]}
+        app = herdeck.App(cfg)
+        self.assertFalse(hasattr(app, "widgets"))
+        self.assertFalse(hasattr(herdeck, "Widget"))
+
+
 if __name__ == "__main__":
     unittest.main()
