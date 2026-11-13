@@ -86,6 +86,11 @@ class HubStateTest(unittest.TestCase):
         out = [(a["status"], a["since"]) for a in hub.state()["agents"]]
         self.assertEqual(out, [("blocked", 3), ("blocked", 1), ("done", 9), ("working", 2), ("idle", 5)])
 
+    def test_error_sorts_after_blocked_before_done(self):
+        hub = herdeck.Hub()
+        hub.update_source("s", {"agents": [{"status": s, "since": 1} for s in ("done", "error", "blocked", "working")]})
+        self.assertEqual([a["status"] for a in hub.state()["agents"]], ["blocked", "error", "done", "working"])
+
 
 class WidgetsRemovedTest(unittest.TestCase):
     def test_state_has_no_widgets(self):

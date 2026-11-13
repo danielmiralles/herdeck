@@ -12,7 +12,7 @@
 <style>
   :root{
     --bg:#0b0d10; --panel:#14171c; --panel2:#1b1f26; --line:#262b33; --text:#e6e8eb; --muted:#8b93a1;
-    --blocked:#ff6b5b; --done:#3fd08b; --working:#5aa9ff; --idle:#5c6370; --unknown:#b48ead; --warn:#e0af68;
+    --blocked:#ff6b5b; --error:#ff9e64; --done:#3fd08b; --working:#5aa9ff; --idle:#5c6370; --unknown:#b48ead; --warn:#e0af68;
     --mono:"SF Mono",ui-monospace,Menlo,monospace;
     --r:16px; --gap:12px;
   }
@@ -28,7 +28,7 @@
   .dot{width:9px;height:9px;border-radius:50%;background:var(--idle);flex:none}
   .dot.on{background:var(--done);box-shadow:0 0 8px var(--done)} .dot.off{background:var(--blocked)}
   .cnt{font-variant-numeric:tabular-nums;color:var(--muted)} .cnt b{color:var(--text);font-weight:600}
-  .cnt .b{color:var(--blocked)} .cnt .d{color:var(--done)} .cnt .w{color:var(--working)}
+  .cnt .b{color:var(--blocked)} .cnt .e{color:var(--error)} .cnt .d{color:var(--done)} .cnt .w{color:var(--working)}
   .spacer{flex:1}
   .clock{color:var(--muted);font-variant-numeric:tabular-nums;font-size:13px}
   nav{display:flex;gap:8px;margin-bottom:var(--gap);overflow-x:auto;scrollbar-width:none}
@@ -39,6 +39,7 @@
   .tile:active{transform:scale(.97)}
   .tile::before{content:"";position:absolute;inset:0 0 auto 0;height:5px;background:var(--c)}
   .tile.blocked{background:linear-gradient(180deg,rgba(255,107,91,.16),var(--panel) 55%);border-color:rgba(255,107,91,.55)}
+  .tile.error{background:linear-gradient(180deg,rgba(255,158,100,.16),var(--panel) 55%);border-color:rgba(255,158,100,.55)}
   .tile.done{background:linear-gradient(180deg,rgba(63,208,139,.12),var(--panel) 55%)}
   .tile.focused{outline:2px solid var(--text);outline-offset:-2px}
   .kind{font-size:12px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);display:flex;gap:6px;align-items:center}
@@ -121,14 +122,14 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const LBL = {blocked:"Necesita input", done:"Terminado", working:"Trabajando", idle:"En espera", unknown:"¿?"};
+const LBL = {blocked:"Necesita input", error:"Error", done:"Terminado", working:"Trabajando", idle:"En espera", unknown:"¿?"};
 let CFG = {plugin_actions:[], quick_replies:[], allow_input:false, read_lines:60};
 let S = {sources:[], agents:[], now:Date.now()/1000};
 let filter = localStorage.getItem("hd_filter") || "all";
 let current = null, prevBlocked = new Set(), first = true, skew = 0;
 let prevStatus = new Map(), justDone = new Set(), spinI = 0;
 const SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
-const KIND_ICON = {claude:"i-claude", codex:"i-codex"};
+const KIND_ICON = {claude:"i-claude", "claude-code":"i-claude", codex:"i-codex"};
 const SRC_ICON = {home:"i-home", work:"i-brief", brief:"i-brief"};
 const reduceMotion = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
 const $ = id => document.getElementById(id);
@@ -157,6 +158,7 @@ function quotaRings(q){
 function glyph(a){
   if (a.status==="working") return `<span class="g spin">${SPIN[spinI]}</span>`;
   if (a.status==="blocked") return `<span class="g cursor">▌</span>`;
+  if (a.status==="error") return `<span class="g">!</span>`;
   if (a.status==="done") return `<span class="g"><span class="check${justDone.has(a.id)?" typing":""}">✓</span></span>`;
   return `<span class="g zz">zZ</span>`;
 }
@@ -167,12 +169,12 @@ function renderHeader(){
     const c = s.counts||{};
     return `<div class="src" title="${esc(s.error||"")}"><span class="dot ${s.connected?"on":"off"}"></span>${icon(SRC_ICON[s.icon])}
       <b style="color:${esc(s.color||"inherit")}">${esc(s.label)}</b>${quotaRings(s.quota)}
-      <span class="cnt">${c.blocked?`<span class="b">● ${c.blocked}</span> `:""}${c.done?`<span class="d">● ${c.done}</span> `:""}${c.working?`<span class="w">● ${c.working}</span> `:""}<b>${(s.connected? Object.values(c).reduce((a,b)=>a+b,0) : "—")}</b></span></div>`;
+      <span class="cnt">${c.blocked?`<span class="b">● ${c.blocked}</span> `:""}${c.error?`<span class="e">● ${c.error}</span> `:""}${c.done?`<span class="d">● ${c.done}</span> `:""}${c.working?`<span class="w">● ${c.working}</span> `:""}<b>${(s.connected? Object.values(c).reduce((a,b)=>a+b,0) : "—")}</b></span></div>`;
   }).join("");
   const down = S.sources.filter(s=>!s.connected);
   const b=$("banner"); b.style.display = down.length?"block":"none";
   b.textContent = down.map(s=>`${s.label}: ${s.error||"sin conexión"}`).join(" · ");
-  const att = S.agents.filter(a=>a.status==="blocked"||a.status==="done").length;
+  const att = S.agents.filter(a=>a.status==="blocked"||a.status==="done"||a.status==="error").length;
   const opts = [["all","Todo"],["attention",`Atención${att?" ("+att+")":""}`],["working","Trabajando"],...S.sources.map(s=>[ "src:"+s.name, s.label]),
     ...S.sources.flatMap(s => (s.spaces||[]).map(x => [x.key, x.label]))];
   const cur = activeFilter(opts.map(o=>o[0]));
@@ -184,7 +186,7 @@ function activeFilter(keys){ return filter.startsWith("ws:") && !keys.includes(f
 function spaceKeys(){ return S.sources.flatMap(s => (s.spaces||[]).map(x => x.key)); }
 function visible(){
   const f = activeFilter(["all","attention","working",...spaceKeys()]);
-  return S.agents.filter(a => f==="all" || (f==="attention" && (a.status==="blocked"||a.status==="done"))
+  return S.agents.filter(a => f==="all" || (f==="attention" && (a.status==="blocked"||a.status==="done"||a.status==="error"))
     || (f==="working" && a.status==="working") || f==="src:"+a.source
     || (f.startsWith("ws:") && a.space_key===f));
 }

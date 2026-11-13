@@ -38,7 +38,9 @@ VERSION = "0.1.0"
 HERE = Path(__file__).resolve().parent
 DEFAULT_CONFIG = Path.home() / ".config" / "herdeck" / "config.json"
 RUN_DIR = Path.home() / ".config" / "herdeck" / "run"
-STATUS_ORDER = {"blocked": 0, "done": 1, "working": 2, "unknown": 3, "idle": 4}
+STATUS_ORDER = {"blocked": 0, "error": 1, "done": 2, "working": 3, "unknown": 4, "idle": 5}
+CLAUDE_KINDS = {"claude", "claude-code"}
+HC_SOCKET = "~/.local/state/herdr-core/default/default.sock"
 LIFECYCLE_EVENTS = [
     "pane.created", "pane.closed", "pane.exited", "pane.agent_detected",
     "workspace.created", "workspace.closed", "workspace.renamed",
@@ -224,6 +226,109 @@ def space_entries(agents: List[dict]) -> List[Dict[str, str]]:
         seen.add(key)
         out.append({"key": key, "label": str(a.get("workspace") or a.get("workspace_id"))})
     return out
+
+
+def is_claude(kind: Any) -> bool:
+    return isinstance(kind, str) and kind.lower() in CLAUDE_KINDS
+
+
+def hc_call(sock_path: str, method: str, params: Optional[dict] = None, timeout: float = 5.0) -> dict:
+    """One JSON-RPC 2.0 request/reply (a single line each) on the hc socket."""
+    req = {"jsonrpc": "2.0", "id": "hd_" + secrets.token_hex(6), "method": method, "params": params or {}}
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+        s.settimeout(timeout)
+        s.connect(sock_path)
+        s.sendall((json.dumps(req) + "\n").encode())
+        buf = b""
+        while b"\n" not in buf:
+            chunk = s.recv(65536)
+            if not chunk:
+                break
+            buf += chunk
+    line = buf.split(b"\n", 1)[0].strip()
+    if not line:
+        raise ConnectionError("respuesta vacía de hc")
+    reply = json.loads(line)
+    err = reply.get("error")
+    if err:
+        data = err.get("data")
+        kind = data.get("kind") if isinstance(data, dict) else None
+        raise RuntimeError("%s: %s" % (kind or err.get("code"), err.get("message")))
+    return reply.get("result") or {}
+
+
+def machine_of(address: str) -> Optional[str]:
+    return address.split("/", 1)[0] if "/" in address else None
+
+
+def app_names(ls: Any) -> Dict[str, Dict[str, Any]]:
+    """terminal address -> {space_id, space, tab} from `herdr-app ls`."""
+    out: Dict[str, Dict[str, Any]] = {}
+    spaces = ls.get("spaces") if isinstance(ls, dict) else None
+    if not isinstance(spaces, list):
+        return out
+    for sp in spaces:
+        if not isinstance(sp, dict):
+            continue
+        for tab in sp.get("tabs") or []:
+            if not isinstance(tab, dict):
+                continue
+            for t in tab.get("terminals") or []:
+                if isinstance(t, dict) and isinstance(t.get("terminal"), str):
+                    out[t["terminal"]] = {"space_id": sp.get("id"), "space": sp.get("name"), "tab": tab.get("name")}
+    return out
+
+
+def normalize_hc(terminals: List[dict], names: Dict[str, dict]) -> Dict[str, Any]:
+    """Map hc terminal.list entries to deck agent rows (agent terminals only)."""
+    agents = []
+    for t in terminals:
+        st = t.get("status")
+        if not isinstance(st, dict) or not st.get("app"):
+            continue
+        addr = t.get("address")
+        labels = t.get("labels") if isinstance(t.get("labels"), dict) else {}
+        info = names.get(addr) or {}
+        space, tab = info.get("space"), info.get("tab")
+        if not info:
+            where = labels.get("where")
+            if isinstance(where, str):
+                space, _, tab = where.partition(" / ")
+                tab = tab or None
+        wid = info.get("space_id") or labels.get("herdr.space") or space
+        fg = t.get("foreground") if isinstance(t.get("foreground"), dict) else {}
+        pid = fg.get("pid")
+        state = str(st.get("state") or "").lower()
+        agents.append({
+            "pane_id": addr,
+            "name": t.get("name"),
+            "kind": "claude" if st["app"] == "claude-code" else st["app"],
+            "status": state if state in STATUS_ORDER else "unknown",
+            "workspace_id": wid,
+            "workspace": space,
+            "tab": tab,
+            "branch": None,
+            "cwd": fg.get("cwd") or t.get("cwd"),
+            "title": t.get("title") or st.get("title") or st.get("msg"),
+            "focused": False,
+            "session_id": None,
+            "pid": pid if isinstance(pid, int) and not isinstance(pid, bool) and pid > 0 else None,
+        })
+    return {"agents": agents, "workspaces": len({a["workspace_id"] for a in agents})}
+
+
+def split_by_machine(terminals: List[dict], machines: List[Optional[str]]) -> Dict[Optional[str], List[dict]]:
+    out: Dict[Optional[str], List[dict]] = {m: [] for m in machines}
+    for t in terminals:
+        m = machine_of(str(t.get("address") or ""))
+        if m in out:
+            out[m].append(t)
+    return out
+
+
+def machine_errors(list_result: dict) -> Dict[str, str]:
+    return {m["name"]: str(m.get("state")) for m in (list_result.get("machines") or [])
+            if isinstance(m, dict) and m.get("name") and m.get("state") != "connected"}
 
 
 def normalize_snapshot(result: dict) -> Dict[str, Any]:
@@ -427,7 +532,7 @@ class Source(BaseSource, threading.Thread):
 
     def claude_key(self, row: dict) -> Optional[str]:
         sid = row.get("session_id")
-        if row["kind"].lower() == "claude" and sid and SESSION_ID_RE.fullmatch(str(sid)):
+        if is_claude(row["kind"]) and sid and SESSION_ID_RE.fullmatch(str(sid)):
             return str(sid)
         return None
 

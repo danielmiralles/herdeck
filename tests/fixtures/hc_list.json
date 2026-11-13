@@ -1,0 +1,164 @@
+{
+  "terminals": [
+    {
+      "address": "t1",
+      "cwd": "/Users/user",
+      "foreground": {
+        "argv": [
+          "claude"
+        ],
+        "cwd": "/Users/user/dev/github.com/proj-a",
+        "name": "2.1.323",
+        "pid": 45915
+      },
+      "labels": {
+        "herdr.seen": "0",
+        "herdr.space": "sp75f1bfb20e4cc7a8061f48571bc0f708",
+        "herdr.tab": "tb9850e759c31fce496da1638292025a22",
+        "where": "personal / proj-a"
+      },
+      "name": null,
+      "state": "live",
+      "status": {
+        "app": "claude-code",
+        "state": "idle"
+      },
+      "title": "Problemas con engram"
+    },
+    {
+      "address": "t3",
+      "cwd": "/Users/user/dev/github.com/proj-b",
+      "foreground": {
+        "argv": [
+          "claude"
+        ],
+        "cwd": "/Users/user/dev/github.com/herdeck",
+        "name": "2.1.323",
+        "pid": 50516
+      },
+      "labels": {
+        "herdr.seen": "12",
+        "herdr.space": "sp75f1bfb20e4cc7a8061f48571bc0f708",
+        "herdr.tab": "tba099bc9c879a0923bd234b078e6e5186",
+        "where": "personal / herdeck"
+      },
+      "name": null,
+      "state": "live",
+      "status": {
+        "app": "claude-code",
+        "state": "working",
+        "title": "Write plan"
+      }
+    },
+    {
+      "address": "workbox/t1",
+      "cwd": "/home/user",
+      "foreground": {
+        "argv": [
+          "claude",
+          "--resume",
+          "7ce3d54e-fce9-43f4-a798-aab7c521356d"
+        ],
+        "cwd": "/home/user/work/project",
+        "name": "claude",
+        "pid": 1897594
+      },
+      "labels": {
+        "herdr.seen": "0",
+        "herdr.space": "spba2ecd8563af0e39a13371ec5922392a",
+        "herdr.tab": "tbf8cc1da3fbe527097de4f3ce9b9bf50e",
+        "where": "work / PROJ-101"
+      },
+      "name": null,
+      "state": "live",
+      "status": {
+        "app": "claude-code",
+        "state": "blocked"
+      },
+      "title": "PROJ-101 - Bootstrap"
+    },
+    {
+      "address": "workbox/t3",
+      "cwd": "/home/user/work/project",
+      "foreground": {
+        "argv": [
+          "/home/user/.local/bin/claude",
+          "attach",
+          "ced6dc20"
+        ],
+        "cwd": "/home/user/work/project",
+        "name": "claude",
+        "pid": 1905852
+      },
+      "labels": {
+        "herdr.seen": "0",
+        "herdr.space": "spba2ecd8563af0e39a13371ec5922392a",
+        "herdr.tab": "tbcd0c8f1f4915904f0786285199c5028f",
+        "where": "work / PROJ-102"
+      },
+      "name": null,
+      "state": "live",
+      "status": null,
+      "title": ""
+    },
+    {
+      "address": "workbox/t9",
+      "cwd": "/home/user/work/project",
+      "foreground": {
+        "argv": [
+          "/home/user/.local/bin/claude",
+          "attach",
+          "ced6dc20"
+        ],
+        "cwd": "/home/user/work/project",
+        "name": "claude",
+        "pid": 1905852
+      },
+      "labels": {
+        "herdr.seen": "0",
+        "herdr.space": "spba2ecd8563af0e39a13371ec5922392a",
+        "herdr.tab": "tbcd0c8f1f4915904f0786285199c5028f",
+        "where": "work / PROJ-102"
+      },
+      "name": null,
+      "state": "live",
+      "status": {
+        "app": "codex",
+        "state": "error"
+      },
+      "title": "codex run"
+    },
+    {
+      "address": "t8",
+      "cwd": "/Users/user",
+      "foreground": {
+        "argv": [
+          "claude"
+        ],
+        "cwd": "/Users/user/dev/github.com/proj-a",
+        "name": "2.1.323",
+        "pid": 45915
+      },
+      "labels": {
+        "herdr.seen": "0",
+        "herdr.space": "sp75f1bfb20e4cc7a8061f48571bc0f708",
+        "herdr.tab": "tb9850e759c31fce496da1638292025a22",
+        "where": "personal / proj-a"
+      },
+      "name": null,
+      "state": "live",
+      "status": {
+        "app": null,
+        "state": "idle"
+      },
+      "title": "Claude Code"
+    }
+  ],
+  "machines": [
+    {
+      "name": "workbox",
+      "state": "connected"
+    }
+  ],
+  "hidden_finished": 0
+}

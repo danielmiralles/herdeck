@@ -1,0 +1,70 @@
+{
+  "spaces": [
+    {
+      "id": "sp75f1bfb20e4cc7a8061f48571bc0f708",
+      "name": "personal",
+      "folder": "/Users/user",
+      "machine": null,
+      "active": true,
+      "tabs": [
+        {
+          "id": "tb9850e759c31fce496da1638292025a22",
+          "name": "proj-a",
+          "active": false,
+          "settled": false,
+          "terminals": [
+            {
+              "terminal": "t1",
+              "pane": "p8bb6e4635df3da9d5b058f54f08f5f95",
+              "status": "idle",
+              "app": "claude-code",
+              "name": null,
+              "sub_agents": []
+            }
+          ]
+        },
+        {
+          "id": "tba099bc9c879a0923bd234b078e6e5186",
+          "name": "herdeck",
+          "active": true,
+          "settled": false,
+          "terminals": [
+            {
+              "terminal": "t3",
+              "pane": "p8121b7c652a117e69bc2b3bf34cd7fc9",
+              "status": "working",
+              "app": "claude-code",
+              "name": null,
+              "sub_agents": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "workbox/spba2ecd8563af0e39a13371ec5922392a",
+      "name": "work",
+      "folder": "/home/user",
+      "machine": "workbox",
+      "active": false,
+      "tabs": [
+        {
+          "id": "workbox/tbf8cc1da3fbe527097de4f3ce9b9bf50e",
+          "name": "PROJ-101",
+          "active": false,
+          "settled": false,
+          "terminals": [
+            {
+              "terminal": "workbox/t1",
+              "pane": "workbox/p74dfa06d1692eeeaa2cd14156343d0e7",
+              "status": "idle",
+              "app": "claude-code",
+              "name": null,
+              "sub_agents": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
