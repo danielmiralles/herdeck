@@ -133,6 +133,7 @@ const KIND_ICON = {claude:"i-claude", "claude-code":"i-claude", codex:"i-codex"}
 const SRC_ICON = {home:"i-home", work:"i-brief", brief:"i-brief"};
 const reduceMotion = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
 const $ = id => document.getElementById(id);
+const sheetOn = () => !(CFG.features && CFG.features.sheet === false);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
 function ago(ts){
@@ -202,7 +203,7 @@ function renderGrid(){
     </div>`).join("") : `<div class="empty">${S.sources.some(s=>s.connected)?"Sin agentes en este filtro":"Conectando con herdr…"}</div>`;
 }
 function renderExtras(){
-  $("plugSec").hidden = !CFG.plugin_actions.length;
+  $("plugSec").hidden = !sheetOn() || !CFG.plugin_actions.length;
   $("plugs").innerHTML = CFG.plugin_actions.map(p=>`<button class="btn" data-plug="${esc(p.id)}">${esc(p.label)}<div style="color:var(--muted);font-weight:400;font-size:12px;margin-top:4px">${esc(p.source)}</div></button>`).join("");
 }
 function alertNew(){
@@ -267,6 +268,7 @@ async function openInTerminal(id){
 let pressTimer=null, longPressed=false;
 document.addEventListener("pointerdown", e=>{
   const t=e.target.closest(".tile"); if(!t) return; longPressed=false;
+  if(!sheetOn()) return;
   pressTimer=setTimeout(()=>{ longPressed=true; openSheet(t.dataset.id); }, 500);
 });
 ["pointerup","pointercancel","pointerleave"].forEach(ev=>document.addEventListener(ev, ()=>clearTimeout(pressTimer)));
@@ -301,6 +303,7 @@ function connect(){
 (async()=>{
   if (location.search.includes("t=")) history.replaceState(null,"","/");
   CFG = await (await api("/api/config")).json(); $("title").textContent = CFG.title||"herdeck";
+  if (CFG.accent){ $("title").style.color = CFG.accent; document.querySelector('meta[name=theme-color]').content = CFG.accent; }
   apply(await (await api("/api/state")).json()); connect(); wake();
 })();
 </script>

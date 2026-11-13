@@ -114,5 +114,41 @@ class HttpTest(unittest.TestCase):
             herdeck.LOGIN_READ_TIMEOUT = 5.0
 
 
+class TwoListenersTest(unittest.TestCase):
+    def test_two_listeners_share_cookie_and_pin(self):
+        guard = PinGuard()
+        ports = []
+        for name in ("herdeck", "herdeck app"):
+            stub = SimpleNamespace(
+                cfg={}, html="<deck/>", html_pin=PIN_HTML, hub=herdeck.Hub(),
+                client_config=lambda: {"title": "t"}, manifest=(lambda n=name: {"name": n}),
+                raw=lambda: {}, action=lambda b: {"ok": True})
+            srv = herdeck.Server(("127.0.0.1", 0), herdeck.make_handler(stub, "TOK", "123456", guard))
+            threading.Thread(target=srv.serve_forever, daemon=True).start()
+            self.addCleanup(srv.server_close)
+            self.addCleanup(srv.shutdown)
+            ports.append(srv.server_address[1])
+
+        def req(port, method, path, body=None, headers=None):
+            c = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+            c.request(method, path, body=body, headers=headers or {})
+            r = c.getresponse()
+            data = r.read()
+            c.close()
+            return r, data
+
+        r, _ = req(ports[0], "POST", "/api/login", json.dumps({"pin": "123456"}))
+        self.assertEqual(r.getheader("Set-Cookie"), COOKIE)
+        cookie = r.getheader("Set-Cookie").split(";", 1)[0]
+        self.assertEqual(req(ports[1], "GET", "/api/state", headers={"Cookie": cookie})[0].status, 200)
+        for port, name in zip(ports, ("herdeck", "herdeck app")):
+            r, body = req(port, "GET", "/manifest.webmanifest", headers={"Cookie": cookie})
+            self.assertEqual(json.loads(body), {"name": name})
+        # the lockout is shared: failures on one port lock the other
+        for _ in range(5):
+            req(ports[1], "POST", "/api/login", json.dumps({"pin": "000000"}))
+        self.assertEqual(req(ports[0], "POST", "/api/login", json.dumps({"pin": "123456"}))[0].status, 429)
+
+
 if __name__ == "__main__":
     unittest.main()

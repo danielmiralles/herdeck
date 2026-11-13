@@ -747,6 +747,211 @@ class Source(BaseSource, threading.Thread):
 
 
 # --------------------------------------------------------------------------
+# herdr-app backend: one hc server, split into sources by machine
+# --------------------------------------------------------------------------
+APP_DEFAULTS: Dict[str, Any] = {
+    "port": 7778, "title": "herdeck app", "accent": "#bb9af7", "hc_socket": HC_SOCKET,
+    "herdr_app_bin": "herdr-app", "app_name": "Herdr", "poll_seconds": 20,
+}
+
+
+def app_block(cfg: dict) -> Optional[dict]:
+    """The herdr_app block with defaults applied, or None when absent or disabled."""
+    block = cfg.get("herdr_app")
+    if not isinstance(block, dict) or block.get("enabled") is False:
+        return None
+    return dict(APP_DEFAULTS, **block)
+
+
+class AppSource(BaseSource):
+    """One herdr-app machine (local when machine is None) fed by HcFeed."""
+
+    def __init__(self, cfg: dict, hub: Hub, block: dict) -> None:
+        BaseSource.__init__(self, cfg, hub)
+        self.block = block
+        self.machine: Optional[str] = cfg.get("machine") or None
+        self.terminals: List[dict] = []
+        self.names: Dict[str, dict] = {}
+
+    def set_data(self, terminals: List[dict], names: Dict[str, dict], connected: bool,
+                 error: Optional[str]) -> None:
+        with self.pub_lock:
+            self.terminals, self.names = terminals, names
+            self.connected, self.error = connected, error
+
+    def snapshot_rows(self) -> Optional[Dict[str, Any]]:
+        return normalize_hc(self.terminals, self.names) if self.connected else None
+
+    def claude_key(self, row: dict) -> Optional[str]:
+        return app_claude_key(row)
+
+
+_app_names_failed = False
+
+
+def read_app_names(bin: str, timeout: float = 5.0) -> Dict[str, dict]:
+    """Space/tab names from `herdr-app ls`; {} (and one log line) while it fails."""
+    global _app_names_failed
+    try:
+        r = subprocess.run([bin, "ls"], capture_output=True, text=True, timeout=timeout)
+        if r.returncode != 0:
+            raise RuntimeError(r.stderr.strip()[:200] or "código %d" % r.returncode)
+        names = app_names(json.loads(r.stdout))
+    except Exception as e:  # noqa: BLE001 — sin nombres se agrupa por la etiqueta "where"
+        if not _app_names_failed:
+            log("[herdr-app] no se pudieron leer los nombres: %s" % str(e)[:200])
+        _app_names_failed = True
+        return {}
+    if _app_names_failed:
+        log("[herdr-app] nombres recuperados")
+    _app_names_failed = False
+    return names
+
+
+class HcFeed(threading.Thread):
+    """Single hc subscription feeding every AppSource (terminal.list on change)."""
+
+    def __init__(self, block: dict, sources: List[AppSource]) -> None:
+        threading.Thread.__init__(self, daemon=True, name="hc-feed")
+        self.block = dict(APP_DEFAULTS, **block)
+        self.sources = sources
+        self.dirty = threading.Event()
+        self.socket_path = os.path.expanduser(self.block["hc_socket"])
+        b = self.block["herdr_app_bin"]
+        self.app_bin = shutil.which(b) or b
+        self.last_terminals: List[dict] = []
+
+    def dispatch(self, list_result: dict, names: Dict[str, dict]) -> None:
+        terminals = list_result.get("terminals") or []
+        if not isinstance(terminals, list):
+            raise ValueError("terminal.list sin lista de terminales")
+        self.last_terminals = terminals
+        errors = machine_errors(list_result)
+        listed = {m.get("name") for m in (list_result.get("machines") or []) if isinstance(m, dict)}
+        split = split_by_machine(terminals, [s.machine for s in self.sources])
+        for s in self.sources:
+            m = s.machine
+            if m is not None and (m in errors or m not in listed):
+                s.set_data([], names, False, "%s: %s" % (m, errors.get(m) or "no está en hc"))
+            else:
+                s.set_data(split[m], names, True, None)
+            s.publish()
+
+    def fail(self, error: str) -> None:
+        self.last_terminals = []
+        for s in self.sources:
+            s.set_data([], {}, False, error[:300])
+            s.publish()
+
+    def refresh(self) -> None:
+        r = hc_call(self.socket_path, "terminal.list")
+        self.dispatch(r, read_app_names(self.app_bin))
+
+    def run(self) -> None:
+        backoff = 1.0
+        while True:
+            try:
+                self._session()
+                backoff = 1.0
+            except Exception as e:  # noqa: BLE001 — se reintenta siempre
+                msg = "hc: %s" % (str(e) or type(e).__name__)
+                log("[herdr-app] desconectado: %s" % msg[:300])
+                self.fail(msg)
+                time.sleep(backoff)
+                backoff = min(backoff * 2, 30)
+
+    def _session(self) -> None:
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            s.settimeout(5.0)
+            s.connect(self.socket_path)
+            s.sendall((json.dumps({"jsonrpc": "2.0", "id": "hd_sub", "method": "events.subscribe",
+                                   "params": {}}) + "\n").encode())
+            s.settimeout(1.0)
+            buf, started = b"", False
+            self.refresh()
+            last_refresh = time.time()
+            poll = float(self.block.get("poll_seconds") or 20)
+            while True:
+                try:
+                    chunk = s.recv(65536)
+                    if not chunk:
+                        raise ConnectionError("hc cerró la suscripción")
+                    buf += chunk
+                except socket.timeout:
+                    pass
+                while b"\n" in buf:
+                    line, buf = buf.split(b"\n", 1)
+                    if not line.strip():
+                        continue
+                    msg = json.loads(line)
+                    if not isinstance(msg, dict):
+                        continue
+                    if msg.get("error"):
+                        raise ConnectionError("suscripción hc: %s" % msg["error"])
+                    if not started:
+                        started = True  # the reply's snapshot has no machines: ignore it
+                        continue
+                    if msg.get("method") != "heartbeat":
+                        self.dirty.set()
+                if self.dirty.is_set() or time.time() - last_refresh > poll:
+                    time.sleep(0.15)  # agrupa ráfagas
+                    self.dirty.clear()
+                    self.refresh()
+                    last_refresh = time.time()
+                for src in self.sources:
+                    src.maybe_refresh_claude()
+        finally:
+            s.close()
+
+
+class AppDeck:
+    """The herdr-app flavor of the deck, served on its own port."""
+
+    def __init__(self, cfg: dict, block: dict) -> None:
+        self.cfg = cfg
+        self.block = dict(APP_DEFAULTS, **block)
+        self.hub = Hub()
+        self.sources = {s["name"]: AppSource(s, self.hub, self.block) for s in self.block["sources"]}
+        self.feed = HcFeed(self.block, list(self.sources.values()))
+        self.html = (HERE / "deck.html").read_text(encoding="utf-8")
+        self.html_pin = (HERE / "pin.html").read_text(encoding="utf-8")
+
+    def start(self) -> None:
+        for s in self.sources.values():
+            s.publish()
+        self.feed.start()
+
+    def client_config(self) -> dict:
+        return {
+            "allow_input": False,
+            "quick_replies": [],
+            "plugin_actions": [],
+            "read_lines": 60,
+            "title": self.block["title"],
+            "version": VERSION,
+            "features": {"sheet": False},
+            "accent": self.block["accent"],
+        }
+
+    def manifest(self) -> dict:
+        t = self.block["title"]
+        return {"name": t, "short_name": t, "display": "standalone",
+                "background_color": "#0b0d10", "theme_color": self.block["accent"], "start_url": "/"}
+
+    def raw(self) -> dict:
+        err = next((s.error for s in self.sources.values() if s.error), None)
+        return {"socket": self.feed.socket_path, "error": err, "terminals": self.feed.last_terminals}
+
+    def action(self, body: dict) -> dict:
+        kind = body.get("action")
+        if kind == "refresh":
+            self.feed.dirty.set()
+            return {"ok": True}
+        raise ValueError("acción no disponible en herdr-app: %s" % kind)
+
+
+# --------------------------------------------------------------------------
 # HTTP
 # --------------------------------------------------------------------------
 PIN_RE = re.compile(r"[0-9]{4,6}")
@@ -843,6 +1048,7 @@ class App:
             "read_lines": int(c.get("read_lines", 60)),
             "title": c.get("title", "herdeck"),
             "version": VERSION,
+            "features": {"sheet": True},
         }
 
     def manifest(self) -> dict:
@@ -1046,6 +1252,24 @@ def load_config(path: Path) -> dict:
     names = [s.get("name") for s in cfg.get("sources", [])]
     if not names or len(set(names)) != len(names) or not all(names):
         raise SystemExit("config: cada fuente necesita un 'name' único")
+    block = app_block(cfg)
+    if block is not None:
+        srcs = block.get("sources")
+        if not isinstance(srcs, list) or not srcs or not all(isinstance(x, dict) for x in srcs):
+            raise SystemExit("config: herdr_app necesita una lista 'sources'")
+        names = [x.get("name") for x in srcs]
+        if len(set(names)) != len(names) or not all(names):
+            raise SystemExit("config: cada fuente de herdr_app necesita un 'name' único")
+        machines = [x.get("machine") or None for x in srcs]
+        if len(set(machines)) != len(machines):
+            raise SystemExit("config: dos fuentes de herdr_app comparten 'machine'")
+        try:
+            block["port"] = int(block["port"])
+        except (TypeError, ValueError):
+            raise SystemExit("config: herdr_app.port debe ser un número")
+        if block["port"] == int(cfg.get("port", 7777)):
+            raise SystemExit("config: herdr_app.port no puede ser el mismo que 'port'")
+        cfg["herdr_app"] = block
     return cfg
 
 
@@ -1075,8 +1299,16 @@ def main() -> None:
         return
     app = App(cfg)
     app.start()
-    srv = Server((host, port), make_handler(app, cfg["token"], cfg["pin"], PinGuard()))
+    guard = PinGuard()
+    srv = Server((host, port), make_handler(app, cfg["token"], cfg["pin"], guard))
     log("herdeck %s escuchando en %s:%d" % (VERSION, host, port))
+    block = app_block(cfg)
+    if block is not None:
+        deck2 = AppDeck(cfg, block)
+        deck2.start()
+        srv2 = Server((host, block["port"]), make_handler(deck2, cfg["token"], cfg["pin"], guard))
+        threading.Thread(target=srv2.serve_forever, daemon=True, name="http-app").start()
+        log("herdeck app escuchando en %s:%d" % (host, block["port"]))
     log("abre en la tablet:", url)
     try:
         srv.serve_forever()
