@@ -33,7 +33,7 @@ class NormalizeSnapshotTest(unittest.TestCase):
 
 class PublishGoldenTest(unittest.TestCase):
     """_publish output for a fixed input must never change (except keys in ADDED_KEYS)."""
-    ADDED_KEYS = {"source": set(), "agent": set()}  # later tasks add names here, never edit the golden
+    ADDED_KEYS = {"source": {"spaces"}, "agent": {"space_key"}}  # later tasks add names here, never edit the golden
 
     def make_source(self):
         src = herdeck.Source({"name": "personal", "label": "Personal", "color": "#7aa2f7",

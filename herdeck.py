@@ -205,6 +205,26 @@ def quota_info(rate_limits: Any, now: float) -> Optional[dict]:
     return out or None
 
 
+def space_key(source: str, workspace_id: Any) -> Optional[str]:
+    """Stable per-workspace filter key; None when the agent has no workspace id."""
+    if workspace_id is None or workspace_id == "":
+        return None
+    return "ws:%s/%s" % (source, workspace_id)
+
+
+def space_entries(agents: List[dict]) -> List[Dict[str, str]]:
+    """Distinct spaces in first-appearance order: [{"key", "label"}]."""
+    out: List[Dict[str, str]] = []
+    seen = set()
+    for a in agents:
+        key = a.get("space_key")
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append({"key": key, "label": str(a.get("workspace") or a.get("workspace_id"))})
+    return out
+
+
 def normalize_snapshot(result: dict) -> Dict[str, Any]:
     """Convierte la respuesta de session.snapshot en filas de agente.
 
@@ -323,6 +343,7 @@ class BaseSource:
             "quota": quota_info(self.claude_rate, now),
             "agents": [],
             "counts": {},
+            "spaces": [],
         }
         norm = self.snapshot_rows()
         if norm is not None:
@@ -337,6 +358,7 @@ class BaseSource:
                 a["source"] = self.name_
                 a["source_label"] = data["label"]
                 a["id"] = "%s/%s" % (self.name_, key)
+                a["space_key"] = space_key(self.name_, a.get("workspace_id"))
                 info = self.claude_sessions.get(self.claude_key(a) or "")
                 if info:
                     a["model"] = model_short(info.get("model"))
@@ -346,6 +368,7 @@ class BaseSource:
                 if k not in seen:
                     del self.since[k]
             data["agents"] = norm["agents"]
+            data["spaces"] = space_entries(norm["agents"])
             data["workspaces"] = norm["workspaces"]
             self.claude_keys = sorted({k for k in (self.claude_key(a) for a in norm["agents"]) if k})
         self.hub.update_source(self.name_, data)

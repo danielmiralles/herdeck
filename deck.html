@@ -173,13 +173,20 @@ function renderHeader(){
   const b=$("banner"); b.style.display = down.length?"block":"none";
   b.textContent = down.map(s=>`${s.label}: ${s.error||"sin conexión"}`).join(" · ");
   const att = S.agents.filter(a=>a.status==="blocked"||a.status==="done").length;
-  const opts = [["all","Todo"],["attention",`Atención${att?" ("+att+")":""}`],["working","Trabajando"],...S.sources.map(s=>[ "src:"+s.name, s.label])];
-  $("filters").innerHTML = opts.map(([k,l])=>`<button class="${k===filter?"on":""}" data-f="${esc(k)}">${esc(l)}</button>`).join("");
+  const opts = [["all","Todo"],["attention",`Atención${att?" ("+att+")":""}`],["working","Trabajando"],...S.sources.map(s=>[ "src:"+s.name, s.label]),
+    ...S.sources.flatMap(s => (s.spaces||[]).map(x => [x.key, x.label]))];
+  const cur = activeFilter(opts.map(o=>o[0]));
+  $("filters").innerHTML = opts.map(([k,l])=>`<button class="${k===cur?"on":""}" data-f="${esc(k)}">${esc(l)}</button>`).join("");
   document.title = (att?`(${att}) `:"") + (CFG.title||"herdeck");
 }
+// A stored space filter whose space is gone falls back to "all" for display only; never persisted.
+function activeFilter(keys){ return filter.startsWith("ws:") && !keys.includes(filter) ? "all" : filter; }
+function spaceKeys(){ return S.sources.flatMap(s => (s.spaces||[]).map(x => x.key)); }
 function visible(){
-  return S.agents.filter(a => filter==="all" || (filter==="attention" && (a.status==="blocked"||a.status==="done"))
-    || (filter==="working" && a.status==="working") || filter==="src:"+a.source);
+  const f = activeFilter(["all","attention","working",...spaceKeys()]);
+  return S.agents.filter(a => f==="all" || (f==="attention" && (a.status==="blocked"||a.status==="done"))
+    || (f==="working" && a.status==="working") || f==="src:"+a.source
+    || (f.startsWith("ws:") && a.space_key===f));
 }
 function renderGrid(){
   const list = visible();
