@@ -4,6 +4,7 @@
   "port": 7777,
   "public_host": "",
   "token": "",
+  "pin": "",
   "allow_input": false,
   "terminal_app": "Ghostty",
   "read_lines": 60,
@@ -23,6 +24,16 @@
       "remote_socket": null
     }
   ],
+
+  "herdr_app": {
+    "port": 7778,
+    "title": "herdeck app",
+    "accent": "#bb9af7",
+    "sources": [
+      { "name": "personal", "label": "Personal", "color": "#7aa2f7", "machine": null },
+      { "name": "trabajo", "label": "Trabajo", "color": "#e0af68", "machine": "workbox", "ssh": "workbox" }
+    ]
+  },
 
   "quick_replies": [
     { "label": "Sí / aprobar", "keys": ["enter"] },

@@ -1332,6 +1332,9 @@ def main() -> None:
     url = "http://%s:%d/?t=%s" % (shown, port, cfg["token"])
     if args.print_url:
         print(url)
+        block = app_block(cfg)
+        if block is not None:
+            print("http://%s:%d/?t=%s" % (shown, block["port"], cfg["token"]))
         print("PIN: %s" % cfg["pin"])
         return
     app = App(cfg)

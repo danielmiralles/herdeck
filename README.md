@@ -15,6 +15,7 @@ Convierte una tablet o un móvil en un panel tipo Stream Deck que muestra **en t
 - **Alertas**: si un agente pasa a `blocked`, la tablet vibra y suena, y el título muestra el contador.
 - **Tocar una tesela**: enfoca el agente y lo abre en tu consola (`terminal_app`, p. ej. `"Ghostty"`). Si ya hay un cliente herdr de esa fuente abierto en el Mac, solo trae la terminal al frente; si no, abre una ventana nueva con `herdr` o `herdr --remote <ssh>`.
 - **Detalle** (mantener pulsada una tesela): las últimas líneas de salida del agente y el botón *Abrir en la consola*. Si activas `allow_input`, también respuestas rápidas (Enter/Esc/texto) y un campo para escribirle.
+- **Filtros por espacio**: chips en la cabecera para quedarte solo con los agentes de uno o varios workspaces (espacios), por fuente.
 - **Acciones de plugins**: botones que ejecutan `herdr plugin action invoke …` en el servidor que elijas.
 - Sin dependencias: Python ≥ 3.9 y la stdlib, nada más.
 
@@ -62,6 +63,20 @@ El script instala **sin `--yes`**: herdr enseña el manifiesto antes de ejecutar
 Después, lista los IDs de acción con `herdr plugin action list --plugin <id>` y añádelos a `plugin_actions` de la config para tener botones en el deck.
 
 `herdr-config.snippet.toml` activa las notificaciones y añade la máquina y `$summary` a la sidebar.
+
+## PIN
+
+El token solo no basta: la primera vez que abres el deck la tablet pide un **PIN** de 4 a 6 dígitos. Se guarda en `pin` de `~/.config/herdeck/config.json` y, si falta, herdeck genera uno de 6 dígitos al arrancar. `python3 herdeck.py --print-url` lo imprime en la última línea (`PIN: …`), después de las URLs. Los intentos fallidos se bloquean con espera exponencial (por IP y global, hasta 1 h), lo que frena la fuerza bruta en la red local, pero no abras el puerto a Internet.
+
+## herdr-app (segundo deck)
+
+Si usas **herdr-app** (terminales gestionadas por `hc`/`herdr-app`), añade un bloque `herdr_app` a la config (hay un ejemplo en `config.example.json`). herdeck levanta entonces un segundo deck en su propio puerto (`7778` por defecto) con el mismo token y PIN. Es **otra PWA**: ábrela en la tablet y usa *Añadir a pantalla de inicio* aparte; aparecerá como "herdeck app" y la de `:7777` sigue funcionando sin reinstalar nada.
+
+- `sources`: una entrada por máquina. `machine: null` es este Mac; con `machine: "workbox"` y `ssh: "workbox"` se lee y enfoca el remoto por SSH.
+- Opciones con valor por defecto: `port` (7778), `title`, `accent`, `hc_socket`, `herdr_app_bin` (`herdr-app`), `app_name` (`Herdr`), `poll_seconds` (20) y `enabled: false` para apagarlo.
+- Contexto, modelo y cuota de Claude requieren el statusline de herdeck en cada máquina (ver instalación, paso 4) y `ssh` sin contraseña para las remotas.
+- En este deck solo se admite **tocar para enfocar** la terminal; no hay lectura de salida ni envío de teclas.
+- `--print-url` imprime ambas URLs y el PIN.
 
 ## Responder desde la tablet (opcional)
 

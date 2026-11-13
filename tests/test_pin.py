@@ -1,5 +1,6 @@
 import json
 import re
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -91,6 +92,26 @@ class PinConfigTest(unittest.TestCase):
             with tempfile.TemporaryDirectory() as d:
                 with self.assertRaises(SystemExit):
                     herdeck.load_config(self._cfg(d, pin=bad))
+
+
+class PrintUrlTest(unittest.TestCase):
+    def _run(self, **extra):
+        cfg = {"token": "TOK", "pin": "123456", "public_host": "deck.local", "sources": [{"name": "x"}]}
+        cfg.update(extra)
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "config.json"
+            p.write_text(json.dumps(cfg), encoding="utf-8")
+            root = Path(herdeck.__file__).resolve().parent
+            out = subprocess.run([sys.executable, str(root / "herdeck.py"), "--config", str(p), "--print-url"],
+                                 capture_output=True, text=True, check=True).stdout
+        return out.splitlines()
+
+    def test_print_url_lists_both_decks_and_pin(self):
+        lines = self._run(herdr_app={"sources": [{"name": "personal", "machine": None}]})
+        self.assertEqual(lines, ["http://deck.local:7777/?t=TOK", "http://deck.local:7778/?t=TOK", "PIN: 123456"])
+
+    def test_print_url_without_block(self):
+        self.assertEqual(self._run(), ["http://deck.local:7777/?t=TOK", "PIN: 123456"])
 
 
 if __name__ == "__main__":
