@@ -792,6 +792,25 @@ class AppSource(BaseSource):
     def claude_key(self, row: dict) -> Optional[str]:
         return app_claude_key(row)
 
+    def check_terminal(self, address: str) -> None:
+        snap = self.snapshot_rows() or {}
+        if address not in {a.get("pane_id") for a in snap.get("agents", [])}:
+            raise ValueError("terminal desconocido: %s" % address)
+
+    def focus(self, address: str) -> dict:
+        self.check_terminal(address)
+        r = subprocess.run([self.block["herdr_app_bin"], "do", "agent.focus", "--terminal", address],
+                           capture_output=True, text=True, timeout=10)
+        if r.returncode != 0:
+            raise RuntimeError((r.stderr or r.stdout or "focus falló").strip())
+        return {"ok": True}
+
+    def activate(self) -> None:
+        r = subprocess.run(["open", "-a", self.block["app_name"]],
+                           capture_output=True, text=True, timeout=15)
+        if r.returncode != 0:
+            raise RuntimeError((r.stderr or r.stdout or "no se pudo abrir la app").strip())
+
 
 _app_names_failed = False
 
@@ -955,6 +974,17 @@ class AppDeck:
         if kind == "refresh":
             self.feed.dirty.set()
             return {"ok": True}
+        if kind in ("open", "focus"):
+            src = self.sources.get(body.get("source"))
+            if src is None:
+                raise ValueError("fuente desconocida")
+            pane = str(body.get("pane_id") or "")
+            if kind == "focus":
+                return src.focus(pane)
+            src.check_terminal(pane)  # validate before the app is brought forward
+            src.activate()
+            src.focus(pane)
+            return {"ok": True, "terminal": "activated"}
         raise ValueError("acción no disponible en herdr-app: %s" % kind)
 
 

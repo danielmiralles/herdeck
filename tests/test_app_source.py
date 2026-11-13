@@ -2,6 +2,7 @@ import json
 import os
 import shutil
 import socket
+import subprocess
 import tempfile
 import threading
 import time
@@ -324,6 +325,57 @@ class AppDeckConfigTest(unittest.TestCase):
         r = deck.raw()
         self.assertEqual((r["error"], r["terminals"]), ("boom", []))
         self.assertTrue(r["socket"].endswith("default.sock"))
+
+
+class AppDeckFocusTest(unittest.TestCase):
+    def setUp(self):
+        self.cfg = {"token": "TOK", "pin": "123456", "sources": []}
+        self.deck = herdeck.AppDeck(self.cfg, make_block())
+        for s in self.deck.sources.values():
+            s.claude_last = time.time() + 3600
+        names = herdeck.app_names(load_fixture("herdr_app_ls.json"))
+        with mock.patch("herdeck.time.time", return_value=FROZEN_NOW):
+            self.deck.feed.dispatch(load_fixture("hc_list.json"), names)
+        self.calls = []
+        self.rc, self.err = 0, ""
+
+    def fake_run(self, argv, **kw):
+        self.calls.append(argv)
+        return subprocess.CompletedProcess(argv, self.rc, "", self.err)
+
+    def act(self, body):
+        with mock.patch("herdeck.subprocess.run", side_effect=self.fake_run):
+            return self.deck.action(body)
+
+    def test_open_activates_then_focuses_remote(self):
+        r = self.act({"action": "open", "source": "trabajo", "pane_id": "workbox/t1"})
+        self.assertEqual(r, {"ok": True, "terminal": "activated"})
+        self.assertEqual(self.calls, [["open", "-a", "Herdr"],
+                                      ["herdr-app", "do", "agent.focus", "--terminal", "workbox/t1"]])
+
+    def test_focus_unknown_terminal(self):
+        with self.assertRaises(ValueError):
+            self.act({"action": "focus", "source": "personal", "pane_id": "t99"})
+        self.assertEqual(self.calls, [])
+
+    def test_focus_other_sources_terminal(self):
+        with self.assertRaises(ValueError):
+            self.act({"action": "open", "source": "personal", "pane_id": "workbox/t1"})
+        self.assertEqual(self.calls, [])
+
+    def test_unknown_source(self):
+        with self.assertRaises(ValueError):
+            self.act({"action": "open", "source": "nope", "pane_id": "t1"})
+
+    def test_focus_failure_raises(self):
+        self.rc, self.err = 1, "no window"
+        with self.assertRaisesRegex(RuntimeError, "no window"):
+            self.act({"action": "focus", "source": "trabajo", "pane_id": "workbox/t1"})
+
+    def test_unsupported_actions(self):
+        for kind in ("read", "prompt", "keys", "plugin"):
+            with self.assertRaisesRegex(ValueError, kind):
+                self.act({"action": kind, "source": "personal", "pane_id": "t1"})
 
 
 if __name__ == "__main__":
