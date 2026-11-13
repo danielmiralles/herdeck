@@ -45,6 +45,20 @@ class NormalizeHcTest(unittest.TestCase):
         self.assertEqual((r["workspace"], r["tab"], r["workspace_id"]),
                          ("personal", "proj-a", "sp75f1bfb20e4cc7a8061f48571bc0f708"))
 
+    def test_remote_workspace_id_same_with_and_without_names(self):
+        with_names = {r["pane_id"]: r["workspace_id"] for r in self.rows()}
+        without = {r["pane_id"]: r["workspace_id"] for r in self.rows(names={})}
+        self.assertEqual(with_names["workbox/t1"], "workbox/spba2ecd8563af0e39a13371ec5922392a")
+        self.assertEqual(without["workbox/t1"], with_names["workbox/t1"])
+        self.assertEqual(with_names["workbox/t9"], with_names["workbox/t1"])  # t9 has no names entry
+        self.assertEqual(without["t1"], with_names["t1"])
+        self.assertEqual(without["t1"], "sp75f1bfb20e4cc7a8061f48571bc0f708")
+
+    def test_prefixed_label_not_double_prefixed(self):
+        terms = [{"address": "workbox/t5", "status": {"app": "codex", "state": "idle"},
+                  "labels": {"herdr.space": "workbox/spX"}}]
+        self.assertEqual(self.rows(terms, {})[0]["workspace_id"], "workbox/spX")
+
     def test_bad_pid_is_none(self):
         base = {"address": "t1", "status": {"app": "claude-code", "state": "idle"}}
         self.assertIsNone(self.rows([dict(base, foreground={"pid": "x"})], {})[0]["pid"])

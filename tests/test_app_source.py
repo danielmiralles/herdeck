@@ -49,11 +49,8 @@ class HcFeedDispatchTest(unittest.TestCase):
         self.assertIs(t["connected"], True)
         self.assertIs(t["remote"], True)
         self.assertEqual((t["icon"], p["icon"]), ("work", "home"))
-        # workbox/t9 is missing from the herdr-app names, so its space comes from the
-        # hc labels (bare id); see the Task 7 report concern about this split.
+        # workbox/t9 is missing from the herdr-app names; its label-derived id must match
         self.assertEqual(t["spaces"], [{"key": "ws:trabajo/workbox/spba2ecd8563af0e39a13371ec5922392a",
-                                        "label": "work"},
-                                       {"key": "ws:trabajo/spba2ecd8563af0e39a13371ec5922392a",
                                         "label": "work"}])
         self.assertEqual(p["spaces"], [{"key": "ws:personal/sp75f1bfb20e4cc7a8061f48571bc0f708",
                                         "label": "personal"}])

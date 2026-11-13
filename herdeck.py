@@ -312,7 +312,14 @@ def normalize_hc(terminals: List[dict], names: Dict[str, dict]) -> Dict[str, Any
             if isinstance(where, str):
                 space, _, tab = where.partition(" / ")
                 tab = tab or None
-        wid = info.get("space_id") or labels.get("herdr.space") or space
+        wid = info.get("space_id")
+        if not wid:
+            wid = labels.get("herdr.space")
+            m = machine_of(str(addr or ""))
+            # herdr-app ids for remote spaces are machine-prefixed; the hc label is bare
+            if wid and m and not str(wid).startswith(m + "/"):
+                wid = "%s/%s" % (m, wid)
+            wid = wid or space
         fg = t.get("foreground") if isinstance(t.get("foreground"), dict) else {}
         pid = fg.get("pid")
         state = str(st.get("state") or "").lower()
