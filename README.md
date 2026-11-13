@@ -88,3 +88,7 @@ Por defecto el deck **solo lee y enfoca**. Con `"allow_input": true` puedes envi
 - Si la conexión falla, la cabecera del deck muestra un punto rojo y el motivo.
 - `http://…:7777/api/raw` devuelve el snapshot crudo de cada servidor. Si una versión de herdr cambia los nombres de los campos y alguna tesela sale vacía, compáralo con `normalize_snapshot()` en `herdeck.py`.
 - Las acciones *leer salida* y *plugins* llaman a tu `herdr` local con `HERDR_SOCKET_PATH` apuntando al socket (también al remoto tunelizado). Mantén **la misma versión de herdr** en el Mac y en el servidor para que el protocolo coincida.
+
+## Licencia
+
+MIT. Ver [LICENSE](LICENSE).
