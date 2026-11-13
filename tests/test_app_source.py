@@ -380,3 +380,53 @@ class AppDeckFocusTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StartAppListenerTest(unittest.TestCase):
+    def setUp(self):
+        self.cfg = {"token": "TOK", "pin": "123456", "sources": [{"name": "personal", "socket": "/nonexistent.sock"}]}
+
+    def test_busy_port_returns_none_instead_of_raising(self):
+        import socket
+        busy = socket.socket()
+        self.addCleanup(busy.close)
+        busy.bind(("127.0.0.1", 0))
+        busy.listen(1)
+        block = dict(make_block(), port=busy.getsockname()[1])
+        self.assertIsNone(herdeck.start_app_listener(self.cfg, block, herdeck.PinGuard(), "127.0.0.1"))
+
+    def test_free_port_returns_serving_server(self):
+        block = dict(make_block(), port=0)
+        srv = herdeck.start_app_listener(self.cfg, block, herdeck.PinGuard(), "127.0.0.1")
+        self.assertIsNotNone(srv)
+        self.addCleanup(srv.server_close)
+        self.addCleanup(srv.shutdown)
+
+
+class HcFeedBackoffTest(unittest.TestCase):
+    def test_backoff_resets_after_a_session_that_refreshed(self):
+        block = dict(make_block(), hc_socket="/nonexistent.sock")
+        feed = herdeck.HcFeed(block, [])
+        feed.fail = lambda m: None
+        sleeps, calls = [], [0]
+
+        class Stop(BaseException):
+            pass
+
+        def session():
+            calls[0] += 1
+            if calls[0] in (3, 5):
+                feed.session_ok = True  # this session got its first refresh
+            if calls[0] > 5:
+                raise Stop()
+            raise ConnectionError("x")
+
+        feed._session = session
+        orig = herdeck.time.sleep
+        herdeck.time.sleep = sleeps.append
+        try:
+            with self.assertRaises(Stop):
+                feed.run()
+        finally:
+            herdeck.time.sleep = orig
+        self.assertEqual(sleeps, [1.0, 2.0, 1.0, 2.0, 1.0])

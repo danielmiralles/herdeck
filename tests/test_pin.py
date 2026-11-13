@@ -116,3 +116,18 @@ class PrintUrlTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PinGuardAttemptBackoffTest(unittest.TestCase):
+    def test_attempt_doubles_and_caps(self):
+        now = [0.0]
+        g = PinGuard(clock=lambda: now[0])
+        got = []
+        for _ in range(20):
+            now[0] += 10000  # lock always expired between tries
+            got.append(g.attempt("a", lambda: False))
+        self.assertEqual(got[3], ("bad", 0.0))
+        self.assertEqual(got[4], ("bad", 30.0))
+        self.assertEqual(got[5], ("bad", 60.0))
+        self.assertEqual(got[11], ("bad", 3600.0))
+        self.assertEqual(got[19], ("bad", 3600.0))

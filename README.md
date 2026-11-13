@@ -66,7 +66,7 @@ Después, lista los IDs de acción con `herdr plugin action list --plugin <id>` 
 
 ## PIN
 
-El token solo no basta: la primera vez que abres el deck la tablet pide un **PIN** de 4 a 6 dígitos. Se guarda en `pin` de `~/.config/herdeck/config.json` y, si falta, herdeck genera uno de 6 dígitos al arrancar. `python3 herdeck.py --print-url` lo imprime en la última línea (`PIN: …`), después de las URLs. Los intentos fallidos se bloquean con espera exponencial (por IP y global, hasta 1 h), lo que frena la fuerza bruta en la red local, pero no abras el puerto a Internet.
+El PIN (4 a 6 dígitos) es otra vía de entrada cuando se pierde la cookie (p. ej. la tablet borra los datos del sitio); la URL con `?t=TOKEN` sigue entrando sin PIN, así que mantenla privada. Se guarda en `pin` de `~/.config/herdeck/config.json` y, si falta, herdeck genera uno de 6 dígitos al arrancar. `python3 herdeck.py --print-url` lo imprime en la última línea (`PIN: …`), después de las URLs. Los intentos fallidos se bloquean con espera exponencial (por IP y global, hasta 1 h), lo que frena la fuerza bruta en la red local, pero no abras el puerto a Internet.
 
 ## herdr-app (segundo deck)
 

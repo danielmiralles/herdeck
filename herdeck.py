@@ -876,10 +876,13 @@ class HcFeed(threading.Thread):
     def run(self) -> None:
         backoff = 1.0
         while True:
+            self.session_ok = False
             try:
                 self._session()
                 backoff = 1.0
             except Exception as e:  # noqa: BLE001 — se reintenta siempre
+                if self.session_ok:
+                    backoff = 1.0  # la sesión llegó a funcionar: no castigar la reconexión
                 msg = "hc: %s" % (str(e) or type(e).__name__)
                 log("[herdr-app] desconectado: %s" % msg[:300])
                 self.fail(msg)
@@ -896,6 +899,7 @@ class HcFeed(threading.Thread):
             s.settimeout(1.0)
             buf, started = b"", False
             self.refresh()
+            self.session_ok = True
             last_refresh = time.time()
             poll = float(self.block.get("poll_seconds") or 20)
             while True:
@@ -1021,16 +1025,23 @@ class PinGuard:
             now = self._clock()
             return max(self._remaining(ip, now), self._remaining(self.GLOBAL, now))
 
+    def _record_fail_locked(self, ip: str, now: float) -> float:
+        for key, free in ((ip, self._free_ip), (self.GLOBAL, self._free_global)):
+            n = self._fails.get(key, 0) + 1
+            self._fails[key] = n
+            if n >= free:
+                self._until[key] = now + min(self._cap, self._base * 2 ** (n - free))
+        return max(self._remaining(ip, now), self._remaining(self.GLOBAL, now))
+
+    def _reset_locked(self, ip: str) -> None:
+        for key in (ip, self.GLOBAL):
+            self._fails.pop(key, None)
+            self._until.pop(key, None)
+
     def failed(self, ip: str) -> float:
         """Record a wrong attempt; return the seconds the caller is now locked."""
         with self._lock:
-            now = self._clock()
-            for key, free in ((ip, self._free_ip), (self.GLOBAL, self._free_global)):
-                n = self._fails.get(key, 0) + 1
-                self._fails[key] = n
-                if n >= free:
-                    self._until[key] = now + min(self._cap, self._base * 2 ** (n - free))
-            return max(self._remaining(ip, now), self._remaining(self.GLOBAL, now))
+            return self._record_fail_locked(ip, self._clock())
 
     def attempt(self, ip: str, check: Callable[[], bool]) -> "tuple[str, float]":
         """Atomic lock check + compare + record. Returns ("locked"|"ok"|"bad", seconds)."""
@@ -1040,22 +1051,13 @@ class PinGuard:
             if left > 0:
                 return "locked", left
             if check():
-                for key in (ip, self.GLOBAL):
-                    self._fails.pop(key, None)
-                    self._until.pop(key, None)
+                self._reset_locked(ip)
                 return "ok", 0.0
-            for key, free in ((ip, self._free_ip), (self.GLOBAL, self._free_global)):
-                n = self._fails.get(key, 0) + 1
-                self._fails[key] = n
-                if n >= free:
-                    self._until[key] = now + min(self._cap, self._base * 2 ** (n - free))
-            return "bad", max(self._remaining(ip, now), self._remaining(self.GLOBAL, now))
+            return "bad", self._record_fail_locked(ip, now)
 
     def succeeded(self, ip: str) -> None:
         with self._lock:
-            for key in (ip, self.GLOBAL):
-                self._fails.pop(key, None)
-                self._until.pop(key, None)
+            self._reset_locked(ip)
 
 
 def _same(a: str, b: str) -> bool:
@@ -1321,6 +1323,21 @@ def lan_ip() -> str:
         s.close()
 
 
+def start_app_listener(cfg: dict, block: dict, guard: "PinGuard", host: str) -> Optional[Server]:
+    """Start the herdr-app deck on its own port; None (logged) if it cannot start,
+    so the main deck keeps serving."""
+    try:
+        deck = AppDeck(cfg, block)
+        srv = Server((host, block["port"]), make_handler(deck, cfg["token"], cfg["pin"], guard))
+        deck.start()
+    except Exception as e:  # noqa: BLE001 — herdr-app is optional, never take :7777 down
+        log("herdeck app no arranca (%s): %s" % (block.get("port"), str(e) or type(e).__name__))
+        return None
+    threading.Thread(target=srv.serve_forever, daemon=True, name="http-app").start()
+    log("herdeck app escuchando en %s:%d" % (host, srv.server_address[1]))
+    return srv
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Deck táctil para herdr")
     ap.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
@@ -1344,11 +1361,7 @@ def main() -> None:
     log("herdeck %s escuchando en %s:%d" % (VERSION, host, port))
     block = app_block(cfg)
     if block is not None:
-        deck2 = AppDeck(cfg, block)
-        deck2.start()
-        srv2 = Server((host, block["port"]), make_handler(deck2, cfg["token"], cfg["pin"], guard))
-        threading.Thread(target=srv2.serve_forever, daemon=True, name="http-app").start()
-        log("herdeck app escuchando en %s:%d" % (host, block["port"]))
+        start_app_listener(cfg, block, guard, host)
     log("abre en la tablet:", url)
     try:
         srv.serve_forever()
