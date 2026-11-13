@@ -52,18 +52,28 @@ SESSION_ID_RE = re.compile(r"[A-Za-z0-9-]{1,128}")
 # argv). Reads the files written by statusline/herdeck-statusline.py and prints
 # {"sessions": {id: {model, context_window}}, "rate_limits": {...} | null}.
 CLAUDE_READER = r"""
-import json, os, sys
+import json, os, re, sys
 d = os.path.expanduser("~/.claude/herdeck")
-def load(name):
+sd = os.path.expanduser("~/.claude/sessions")
+def load(name, base=d):
     try:
-        with open(os.path.join(d, name), encoding="utf-8") as f:
+        with open(os.path.join(base, name), encoding="utf-8") as f:
             j = json.load(f)
         return j if isinstance(j, dict) else None
     except Exception:
         return None
 out = {"sessions": {}, "rate_limits": None}
 for sid in sys.argv[1:]:
-    j = load(sid + ".json")
+    real = sid
+    if sid.startswith("pid:"):
+        pn = sid[4:]
+        if not (pn.isascii() and pn.isdigit()):
+            continue
+        sj = load(pn + ".json", sd)
+        real = sj.get("sessionId") if sj else None
+        if not isinstance(real, str) or not re.fullmatch(r"[A-Za-z0-9-]{1,128}", real):
+            continue
+    j = load(real + ".json")
     if j:
         out["sessions"][sid] = {"model": j.get("model"), "context_window": j.get("context_window")}
 try:
@@ -78,6 +88,13 @@ for n in names[:5]:
         break
 print(json.dumps(out))
 """
+
+
+def app_claude_key(row: dict) -> Optional[str]:
+    pid = row.get("pid")
+    if is_claude(row.get("kind")) and isinstance(pid, int) and not isinstance(pid, bool) and pid > 0:
+        return "pid:%d" % pid
+    return None
 
 
 def log(*args: Any) -> None:
